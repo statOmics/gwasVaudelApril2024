@@ -1,0 +1,40 @@
+name : "gwasMM"
+title : "GWAS - BOLT-LMM, REGENIE and the link between PCA-regression, ridge regression and linear mixed models"
+navbar:
+  title: "GWAS"
+  left:
+    - icon: fa-home
+      href: index.html
+    - text: "Journal clubs"
+      icon: fa-chalkboard-teacher
+      menu:
+      - text: "1. BOLT-LMM"
+        href: boltLmm.html
+      - text: "2. REGENIE"
+        href: regenie.html
+
+  right:
+    - text: "About"
+      href: about.html
+    - icon: fab fa-github
+      href: https://github.com/statOmics/gwasMM
+    - text: "statOmics"
+      href: http://statomics.github.io/
+
+output_dir: "docs/"
+
+output:
+  bookdown::html_document2:
+      code_download: true
+      df_print: paged
+      theme: flatly
+      highlight: tango
+      toc: true
+      toc_float: true
+      number_sections: true
+      code_folding: show
+      include:
+        after_body: footer.html
+      css: style.css
+new_session: true
+exclude: ["renv.lock", "raw-data", "update_install_R.R", "install.R"]

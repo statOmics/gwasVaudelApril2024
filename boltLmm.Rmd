@@ -1,0 +1,1277 @@
+---
+title: "Under the hood of BOLT-LMM"
+author: "Lieven Clement"
+date: "statOmics, Ghent University (https://statomics.github.io)"
+output:
+    bookdown::html_document2:
+      code_download: true
+      df_print: paged
+      theme: flatly
+      highlight: tango
+      toc: true
+      toc_float: true
+      number_sections: true
+      code_folding: show
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(plotly)
+```
+
+
+# Linear mixed model for GWAS
+
+## Specification
+
+$$
+\tag{1}
+\mathbf{Y} = \mathbf{x}_\text{test}\beta_\text{test} + \mathbf{X}_c\boldsymbol{\beta}_c + \mathbf{Z}_{GRM}\mathbf{u} +\boldsymbol{\epsilon} 
+$$
+with 
+
+- $\mathbf{Y}$ an $N\times1$ vector of the phenotype
+- $\mathbf{x}_\text{test}$ an $N\times1$ vector with the genotype for the candidate SNP
+- $\beta_\text{test}$ the association of candidate SNP and the phenotype
+- $\mathbf{X}_c$ an $N\times p$ matrix with the covariate pattern for $C$ known covariates (vector of ones (intercept), age, gender, batch,...) 
+- $\boldsymbol{\beta}_c$ the $p\times 1$ vector of parameters modeling the association of the p covariates and the phenotype. 
+- $\mathbf{Z}$ an $N\times M$ genetic relationship matrix (GRM) with all normalised genotypes
+- $\mathbf{u}$ an $M\times 1$ vector with i.i.d. random effect for each SNP $\mathbf{u}\sim \text{MVN}(0,\mathbf{I}\sigma_u^2)$
+- $\boldsymbol{\epsilon}$ an $M\times 1$ vector with environmental residuals that are assumed to be independent of $\mathbf{u}$ and i.i.d.  $\boldsymbol{\epsilon}\sim \text{MVN}(0,\mathbf{I}\sigma_\epsilon^2)$
+
+Random effects are used to model the correlation structure in the data. They imply a certain covariance structure of $\mathbf{y}$
+
+## Covariance structure
+
+Covariance structure of $\mathbf{y}$ implied by GWAS mixed model: 
+
+$$
+\begin{array}{ccl}
+\text{var}\left[\mathbf{Y}\right] &=& \text{var}\left[\mathbf{x}_\text{test}\beta_\text{test} + \mathbf{X}_c\boldsymbol{\beta}_c + \mathbf{Z}_\text{GRM}\mathbf{u} +\boldsymbol{\epsilon}\right]\\\\
+&\updownarrow& \mathbf{u} \perp \boldsymbol{\epsilon}\\\\
+&=& \text{var}[\mathbf{Z}_\text{GRM}\mathbf{u}] + \text{var}[\boldsymbol{\epsilon}]\\\\
+&=&\mathbf{Z}_\text{GRM}\text{var}[\mathbf{u}]\mathbf{Z}_\text{GRM}^T + \mathbf{I} \sigma^2\\\\
+&=&\mathbf{Z}_\text{GRM}\mathbf{I}\sigma^2_u\mathbf{Z}_\text{GRM}^T + \mathbf{I} \sigma^2_\epsilon \\\\
+&=&\mathbf{Z}_\text{GRM}\mathbf{Z}_\text{GRM}^T \sigma^2_u+ \mathbf{I} \sigma^2_\epsilon
+\end{array}
+$$
+
+Note that the model is often also written in another way:
+
+$$
+\tag{1}
+\mathbf{Y} = \mathbf{x}_\text{test}\beta_\text{test} + \mathbf{X}_c\boldsymbol{\beta}_c + \mathbf{g} +\boldsymbol{\epsilon} 
+$$
+
+- with $\mathbf{g} \sim \text{MVN}(\mathbf{0},\mathbf{K}\sigma^2_g)$ 
+
+
+- $\mathbf{K}$ the $N \times N$ empirical kinship matrix 
+
+$$
+\mathbf{K} = \frac{\mathbf{Z}_\text{GRM}\mathbf{Z}^T_\text{GRM}}{M} 
+$$ 
+
+- $\sigma_g^2$ the polygenic variance $\sigma_g^2=M\sigma_u^2$
+
+# Bolt LMM 
+
+What does projecting out covariates $\mathbf{X}_c$ mean? 
+
+## Intermezzo Projections 
+
+Linear regression and least squares are projections. 
+
+### Toy-Data
+
+Consider the following toy-dataset with 3 observation (X,Y):
+
+```{r}
+library(tidyverse)
+data <- data.frame(x=1:3,y=c(1,2,2))
+data
+```
+
+### Scalar model form
+
+- Consider a vector of predictors $\mathbf{x}=(x_1,\ldots,x_p)$ and
+- a real-valued response $Y$
+- then the linear regression model can be written as
+\[
+y_i=\beta_0+\sum\limits_{j=1}^p x_{ij}\beta_j + \epsilon
+\]
+
+
+Scalar model for the toy dataset
+
+$$
+y_i=\beta_0+\beta_1x + \epsilon_i
+$$
+
+If we write the model for each observation:
+
+$$
+\begin{array} {lcl}
+1 &=& \beta_0+\beta_1 1  + \epsilon_1 \\
+2 &=& \beta_0 + \beta_1 2 + \epsilon_2 \\
+2 &=& \beta_0+\beta_1 3+ \epsilon_3 \\
+\end{array}
+$$
+
+
+### Vector/Matrix form
+
+- $n$ observations $(\mathbf{x}_1,y_1) \ldots (\mathbf{x}_n,y_n)$ with $\mathbf{x}_1^T=[\begin{array}{cccc} 1& x_1& \ldots& x_p\end{array}]$
+- Regression in matrix notation
+\[\mathbf{Y}=\mathbf{X\beta} + \mathbf{\epsilon}\]
+with $\mathbf{Y}=\left[\begin{array}{c}y_1\\ \vdots\\y_n\end{array}\right]$,
+$\mathbf{X}=\left[\begin{array}{cccc} 1&x_{11}&\ldots&x_{1p}\\
+\vdots&\vdots&&\vdots\\
+1&x_{n1}&\ldots&x_{np}
+\end{array}\right]$ or $\mathbf{X}=\left[\begin{array}{c} \mathbf{x}_1^T\\\vdots\\\mathbf{x}_n^T\end{array}\right]$,
+$\boldsymbol{\beta}=\left[\begin{array}{c}\beta_0\\ \vdots\\ \beta_p\end{array}\right]$ and
+$\mathbf{\epsilon}=\left[\begin{array}{c} \epsilon_1 \\ \vdots \\ \epsilon_n\end{array}\right]$
+
+
+Application to toy dataset: 
+
+$$
+\mathbf{Y} = \mathbf{X}\boldsymbol{\beta}+\boldsymbol{\epsilon}
+$$
+
+with
+
+$$
+\mathbf{Y}=\left[
+\begin{array}{c}
+1\\
+2\\
+2\\
+\end{array}\right],
+\quad
+\mathbf{X}= \left[
+\begin{array}{cc}
+1&1\\
+1&2\\
+1&3\\
+\end{array}
+\right],
+\quad \boldsymbol{\beta} = \left[
+\begin{array}{c}
+\beta_0\\
+\beta_1\\
+\end{array}
+\right]
+\quad
+\text{and}
+\quad
+\boldsymbol{\epsilon}=
+\left[
+\begin{array}{c}
+\epsilon_1\\
+\epsilon_2\\
+\epsilon_3
+\end{array}
+\right]
+$$
+
+### Interpretation
+
+From the linear regression we get
+\[
+  E[Y \mid \mathbf{x}] = \mathbf{x}^T\boldsymbol{\beta} .
+\]
+
+- Hence, the $\beta$ parameters relate the predictor $\mathbf{x}$ to the mean outcome.
+- If we know the covariate pattern $\mathbf{x}$ we can use the model to
+predict $Y$.
+
+For a model with a single predictor, e.g. Y is BMI and $x_1$ is bloodpressure (BP) we obtain
+
+\[
+E[Y \mid x_1] = \beta_0 + \beta_1 x_1
+\]
+and
+\[
+\begin{array}{rccl}
+ \beta_1 &=& E[Y\mid x_1=b+1] &- E[Y\mid x_1=b] \\
+ &=& \beta_0 + \beta_1 (b+1)& - \beta_0 - \beta_1 b
+ \end{array}
+\]
+
+- The parameter  $\beta_1$ has an interpretation as the average difference in BMI between subjects that differ with 1mmHG in BP.
+
+- The parameter  $\beta_1$  does not say much about individual outcomes. The residual variance $\sigma^2$ determines how much individual outcomes vary about the mean outcome.
+
+
+For a model with multiple predictors: BP ($x_1$), sex ($x_2$), age ($x_3$) we obtain
+
+\[
+E[Y \mid x_1, x_2, x_3] = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3 
+\]
+and
+\[
+\begin{array}{rcl}
+ \beta_1 &=& E[Y\mid x_1=b+1, x_2=s, x_3 = a] - E[Y\mid x_1=b]\\\\ 
+ &=& \beta_0 + \beta_1 (b+1) + \beta_3 s + \beta_3 a  - \beta_0 - \beta_1 b - \beta_3 s - \beta_3 a.
+\end{array}
+\]
+
+- The parameter  $\beta_1$ has an interpretation as the average difference in BMI between subjects of the same sex and the same age that differ 1 mmHg in BP.
+- or average difference in BMI between subjects that differ 1 mmHg in BP while controlling for age and gender.
+
+
+
+The $\boldsymbol{\beta}$ parameters are used to measure association, but a $\boldsymbol{\beta} \neq \mathbf{0}$ does not necessarily mean that the model will give good predictions.
+
+$$
+\hat Y = \mathbf{x}^T \hat \beta
+$$
+Model fit and predictions based on the toy dataset
+
+```{r echo=FALSE, warning=FALSE,message=FALSE}
+lm1 <- lm(y~x,data)
+data$yhat <- lm1$fitted
+
+data %>%
+  ggplot(aes(x,y)) +
+  geom_point() +
+  ylim(0,4) +
+  xlim(0,4) +
+  stat_smooth(method = "lm", color = "red", fullrange = TRUE) +
+  geom_point(aes(x=x, y =yhat), pch = 2, size = 3, color = "red") +
+  geom_segment(data = data, aes(x = x, xend = x, y = y, yend = yhat), lty = 2 )
+```
+
+### Estimation of $\boldsymbol{\beta}$
+#### Ordinary Least Squares (OLS)
+
+- Minimize the sum of squares of the errors
+\begin{eqnarray*}
+\text{SSE}(\boldsymbol{\beta})&=&\sum\limits_{i=1}^n e^2_i\\\\
+&=&\sum\limits_{i=1}^n \left(y_i-\beta_0-\sum\limits_{j=1}^p x_{ij}\beta_j\right)^2
+\end{eqnarray*}
+
+- or in matrix notation
+\begin{eqnarray*}
+\text{SSE}(\boldsymbol{\beta})&=&\mathbf{e}^T\mathbf{e}\\\\
+&=& \left[\begin{array}{ccc} e_1 &\ldots& e_n \end{array}\right]\left[\begin{array}{c}e_1\\\vdots\\e_n\end{array}\right]\\
+&=& e_1^2 + e_2^2 + \ldots + e_n^2\\\\
+&=&(\mathbf{Y}-\mathbf{X\beta})^T(\mathbf{Y}-\mathbf{X\beta})\\\\
+&=&\Vert \mathbf{Y}-\mathbf{X\beta}\Vert^2_2\\
+\end{eqnarray*}
+with the $L_2$-norm of a $p$-dim. vector $v$ $\Vert \mathbf{v} \Vert_2=\sqrt{v_1^2+\ldots+v_p^2}$    
+$\rightarrow$ $\hat{\boldsymbol{\beta}}=\text{argmin}_\beta \Vert \mathbf{Y}-\mathbf{X\beta}\Vert^2_2$
+
+
+---
+
+#### Minimize SSE
+\[
+\begin{array}{ccc}
+\frac{\partial}{\partial \boldsymbol{\beta}} \text{SSE}&=&\mathbf{0}\\\\
+\frac{\partial}{\partial \boldsymbol{\beta}}(\mathbf{Y}-\mathbf{X\beta})^T(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta})&=&\mathbf{0}\\\\
+-2\mathbf{X}^T(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta})&=&\mathbf{0}\\\\
+-2\mathbf{X}^T\mathbf{Y} + 2\mathbf{X}^T\mathbf{X\beta}&=&0\\\\
+\mathbf{X}^T\mathbf{X\beta}&=&\mathbf{X}^T\mathbf{Y}\\\\
+\hat{\boldsymbol{\beta}}&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}
+\end{array}
+\]
+
+It can be shown that the estimator is unbiased:
+
+$$
+\begin{array}{ccc}
+E[\hat{\boldsymbol{\beta}}]&=&E[(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}]\\ \\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T E[\mathbf{Y}]\\\\
+&=& (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{X}\boldsymbol{\beta}\\\\
+&=& \boldsymbol{\beta}
+\end{array}
+$$
+
+
+---
+
+
+### Projection
+
+There is also another picture to regression:
+
+- Instead of plotting each observation $i= 1 \ldots n$ as a data-point in $\mathbb{R}^p$ with dimensions $1 \ldots p$ for every variable/feature that is recorded for each observation
+
+- We can also plot $\mathbf{Y}$, $\hat{\mathbf{Y}}$ and each column of $\mathbf{X}$: $\mathbf{X}_j$ with $j=1 \ldots p$ as a vector in $\mathbb{R}^n$ with dimensions $1 \ldots n$ for every observation.
+
+- In this representation linear regression can be interpreted as a projection of the vector $\mathbf{Y}$ onto the subspace of $\mathbb{R}^n$ that is spanned by the vectors for the predictors $\mathbf{X}_1 \ldots \mathbf{X}_p$.
+
+- The space $\mathbf{X}_1 \ldots \mathbf{X}_p$ is also referred to as the column space of $\mathbf{X}$, the space that consists of all linear combinations of the vectors of the predictors or columns $\mathbf{X}_1 \ldots \mathbf{X}_p$.
+
+
+#### Intermezzo: Projection of vector on X  and Y axis
+
+$$
+\mathbf{e}=\left[\begin{array}{c} e_1\\e_2\end{array}\right], \mathbf{u}_1 =  \left[\begin{array}{c} 1\\0\end{array}\right], \mathbf{u}_2 =  \left[\begin{array}{c} 0\\1\end{array}\right]
+$$
+
+
+```{r warning=FALSE,message=FALSE,echo=FALSE}
+plotdata <- data.frame(e1=3,e2=2)
+plotdata %>% ggplot(aes(x=e1,y=e2)) +
+  geom_point() +
+  geom_segment(aes(x = 3, y = 2, xend = 3, yend = 0),color="orange",linetype=2,size=2) +
+geom_segment(aes(x = 3, y = 2, xend = 0, yend = 2),color="orange",linetype=2,size=2) +
+ geom_segment(aes(x = 0, y = 0, xend = 3, yend = 2),
+                  arrow = arrow(length = unit(0.5, "cm")),color="red",size=2) +
+ geom_segment(aes(x = 0, y = 0, xend = 3, yend = 0),
+                  arrow = arrow(length = unit(0.5, "cm")),color="orange",size=2) +
+ geom_segment(aes(x = 0, y = 0, xend = 0, yend = 2),
+                  arrow = arrow(length = unit(0.5, "cm")),color="orange",size=2)  +
+ geom_segment(aes(x = 0, y = 0, xend = 0, yend = 1),
+                  arrow = arrow(length = unit(0.5, "cm")),size=2) +
+geom_segment(aes(x = 0, y = 0, xend = 1, yend = 0),
+                  arrow = arrow(length = unit(0.5, "cm")),size=2) +
+ geom_text(aes(x=3.05,y=2.2,label="e=(e1,e2)"),color="red",size = 7,hjust="left") +
+ geom_text(aes(x=3.05,y=0,label="(e1,0)"),color="orange",size = 7,hjust="left",vjust="top") +
+ geom_text(aes(x=0,y=2.2,label="(0,e2)"),color="orange",size = 7,hjust="left") +
+ geom_text(aes(x=0.05,y=1.2,label="u2=(0,1)"),size = 7,hjust="left") +
+   geom_text(aes(x=1.05,y=0.2,label="u1=(1,0)"),size = 7,hjust="left")  +
+   coord_fixed() +
+  xlim(-.5,4) +
+  ylim(-.5,2.5)
+```
+
+
+
+1. Projection of vector e on x-axis
+
+\begin{eqnarray*}
+\mathbf{u}_1^T \mathbf{e} &=& \Vert \mathbf{u}_1\Vert_2  \Vert \mathbf{e}_1\Vert_2 \cos <\mathbf{u}_1,\mathbf{e}_1>\\
+&=&\left[\begin{array}{cc} 1&0\end{array}\right] \left[\begin{array}{c} e_1\\e_2\end{array}\right]\\ &=& 1\times e_1 + 0 \times e_2 \\
+&=& e_1\\
+\end{eqnarray*}
+
+2. Projection of vector e on y-axis
+
+\begin{eqnarray*}
+\mathbf{u}_2^T \mathbf{e} &=& \left[\begin{array}{cc} 0&1\end{array}\right] \left[\begin{array}{c} e_1\\e_2\end{array}\right]\\ &=& 0\times e_1 + 1 \times e_2 \\
+&=& e_2
+\end{eqnarray*}
+
+3. Projection of vector e on itself
+
+
+\begin{eqnarray*}
+\mathbf{e}^T \mathbf{e} &=&\left[\begin{array}{cc} e_1&e_2\end{array}\right] \left[\begin{array}{c} e_1\\e_2\end{array}\right]\\
+&=&e_1^2+e_2^2\\
+&=&\Vert e \Vert^2_2 \rightarrow \text{ Pythagorean theorem}
+\end{eqnarray*}
+
+---
+
+#### Interpretation of least squares as a projection
+
+Fitted values:
+
+$$
+\begin{array}{lcl}
+\hat{\mathbf{Y}} &=& \mathbf{X}\hat{\boldsymbol{\beta}}\\
+&=& \mathbf{X} (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}\\
+&=& \mathbf{HY}
+\end{array}
+$$
+with $\mathbf{H}$ the projection matrix also referred to as the hat matrix.
+
+
+```{r}
+X <- model.matrix(~x,data)
+X
+```
+
+```{r}
+XtX <- t(X)%*%X
+XtX
+```
+
+```{r}
+XtXinv <- solve(t(X)%*%X)
+XtXinv
+```
+
+```{r}
+H <- X %*% XtXinv %*% t(X)
+H
+```
+
+
+```{r}
+Y <- data$y
+Yhat <- H%*%Y
+Yhat
+```
+
+
+- We can also interpret the fit as the projection of the $n\times 1$ vector $\mathbf{Y}$ on the column space of the matrix $\mathbf{X}$.
+
+- So each column in $\mathbf{X}$ is also an $n\times 1$ vector.
+
+- For the toy example n=3 and p=2.
+  The other picture to linear regression is to consider $X_0$, $X_1$ and $Y$ as vectors in the space of the data $\mathbb{R}^n$, here $\mathbb{R}^3$ because we have three data points.
+So the column space of X is a plane in the three dimensional space.
+
+\[
+\hat{\mathbf{Y}} = \mathbf{X} (\mathbf{X}^T\mathbf{X})^{-1} \mathbf{X}^T \mathbf{Y}
+\]
+
+1. Plane spanned by column space:
+The other picture to linear regression is to consider $X_0$, $X_1$ and $Y$ as vectors in the space of the data $\mathbb{R}^n$, here $\mathbb{R}^3$ because we have three data points.
+
+
+```{r}
+originRn <- data.frame(X1=0,X2=0,X3=0)
+data$x0 <- 1
+dataRn <- data.frame(t(data))
+
+library(plotly)
+
+p1 <- plot_ly(
+    originRn,
+    x = ~ X1,
+    y = ~ X2,
+    z= ~ X3, name="origin") %>%
+  add_markers(type="scatter3d") %>%
+  layout(
+    scene = list(
+      aspectmode="cube",
+      xaxis = list(range=c(-4,4)), yaxis = list(range=c(-4,4)), zaxis = list(range=c(-4,4))
+      )
+    )
+p1 <- p1 %>%
+  add_trace(
+    x = c(0,1),
+    y = c(0,0),
+    z = c(0,0),
+    mode = "lines",
+    line = list(width = 5, color = "grey"),
+    type="scatter3d",
+    name = "obs1") %>%
+  add_trace(
+    x = c(0,0),
+    y = c(0,1),
+    z = c(0,0),
+    mode = "lines",
+    line = list(width = 5, color = "grey"),
+    type="scatter3d",
+    name = "obs2") %>%
+  add_trace(
+    x = c(0,0),
+    y = c(0,0),
+    z = c(0,1),
+    mode = "lines",
+    line = list(width = 5, color = "grey"),
+    type="scatter3d",
+    name = "obs3") %>%
+  add_trace(
+    x = c(0,1),
+    y = c(0,1),
+    z = c(0,1),
+    mode = "lines",
+    line = list(width = 5, color = "black"),
+    type="scatter3d",
+    name = "X1") %>%
+    add_trace(
+    x = c(0,1),
+    y = c(0,2),
+    z = c(0,3),
+    mode = "lines",
+    line = list(width = 5, color = "black"),
+    type="scatter3d",
+    name = "X2")
+p1
+```
+
+
+2. Vector of Y:
+
+Actual values of $\mathbf{Y}$:
+
+```{r}
+data$y
+```
+
+\[
+\mathbf{Y}=\left[\begin{array}{c}
+`r data$y[1]` \\
+`r data$y[2]` \\
+`r data$y[3]`
+\end{array}\right]
+\]
+
+```{r}
+p2 <- p1 %>%
+  add_trace(
+    x = c(0,Y[1]),
+    y = c(0,Y[2]),
+    z = c(0,Y[3]),
+    mode = "lines",
+    line = list(width = 5, color = "red"),
+    type="scatter3d",
+    name = "Y")
+p2
+```
+
+3. Projection of Y onto column space
+
+Actual values of fitted values $\mathbf{\hat{Y}}$:
+
+```{r}
+data$yhat
+```
+
+\[
+\mathbf{Y}=\left[\begin{array}{c}
+`r data$yhat[1]` \\
+`r data$yhat[2]` \\
+`r data$yhat[3]`
+\end{array}\right]
+\]
+
+```{r}
+p2 <- p2 %>%
+  add_trace(
+    x = c(0,Yhat[1]),
+    y = c(0,Yhat[2]),
+    z = c(0,Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "orange"),
+    type="scatter3d",
+    name="Yhat") %>%
+    add_trace(
+    x = c(Y[1],Yhat[1]),
+    y = c(Y[2],Yhat[2]),
+    z = c(Y[3],Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "red", dash="dash"),
+    type="scatter3d",
+    name="Y -> Yhat"
+    )
+p2
+```
+
+$\mathbf{Y}$ is projected in the column space of $\mathbf{X}$! spanned by the columns.
+
+#### How does this projection works?
+
+$$
+\begin{array}{lcl}
+\hat{\mathbf{Y}} &=& \mathbf{X} (\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}\\
+&=& \mathbf{X}(\mathbf{X}^T\mathbf{X})^{-1/2}(\mathbf{X}^T\mathbf{X})^{-1/2}\mathbf{X}^T\mathbf{Y}\\
+&=& \mathbf{S}\mathbf{S}^T\mathbf{Y}
+\end{array}
+$$
+
+
+- $\mathbf{S}$ is a new orthonormal basis in $\mathbb{R}^2$, a subspace of $\mathbb{R}^3$
+
+- The space spanned by $\mathbf{S}$ and $\mathbf{X}$ is the column space of $\mathbf{X}$, e.g. it contains all possible linear combinantions of $\mathbf{X}$.
+$\mathbf{S}^t\mathbf{Y}$ is the projection of $\mathbf{Y}$ on this new orthonormal basis
+
+```{r}
+svdX <- svd(X) # SVD X = UDV^T
+XtXinvSqrt <- svdX$v %*%diag(1/svdX$d)%*%t(svdX$v)
+S <- X %*% XtXinvSqrt
+```
+
+
+- $\mathbf{S}$ orthonormal basis
+
+```{r}
+S
+t(S)%*%S
+```
+
+- $\mathbf{SS}^T$ equals projection matrix
+
+```{r}
+S%*%t(S)
+H
+```
+
+
+```{r}
+p3 <- p1 %>%
+  add_trace(
+    x = c(0,S[1,1]),
+    y = c(0,S[2,1]),
+    z = c(0,S[3,1]),
+    mode = "lines",
+    line = list(width = 5, color = "blue"),
+    type="scatter3d",
+    name = "S1") %>%
+  add_trace(
+    x = c(0,S[1,2]),
+    y = c(0,S[2,2]),
+    z = c(0,S[3,2]),
+    mode = "lines",
+    line = list(width = 5, color = "blue"),
+    type="scatter3d",
+    name = "S2")
+
+p3
+```
+
+
+- $\mathbf{S}^T\mathbf{Y}$ is the projection of $\mathbf{Y}$ in the space spanned by $\mathbf{S}$.
+- Indeed $\mathbf{S}_1^T\mathbf{Y}$
+
+```{r}
+p4 <- p3 %>%
+  add_trace(
+    x = c(0,Y[1]),
+    y = c(0,Y[2]),
+    z = c(0,Y[3]),
+    mode = "lines",
+    line = list(width = 5, color = "red"),
+    type="scatter3d",
+    name = "Y") %>%
+  add_trace(
+    x = c(0,S[1,1]*(S[,1]%*%Y)),
+    y = c(0,S[2,1]*(S[,1]%*%Y)),
+    z = c(0,S[3,1]*(S[,1]%*%Y)),
+    mode = "lines",
+    line = list(width = 5, color = "red",dash="dash"),
+    type="scatter3d",
+    name="Y -> S1") %>% add_trace(
+    x = c(Y[1],S[1,1]*(S[,1]%*%Y)),
+    y = c(Y[2],S[2,1]*(S[,1]%*%Y)),
+    z = c(Y[3],S[3,1]*(S[,1]%*%Y)),
+    mode = "lines",
+    line = list(width = 5, color = "red", dash="dash"),
+    type="scatter3d",
+    name="Y -> S1")
+p4
+```
+
+- and $\mathbf{S}_2^T\mathbf{Y}$
+```{r}
+p5 <- p4 %>%
+  add_trace(
+    x = c(0,S[1,2]*(S[,2]%*%Y)),
+    y = c(0,S[2,2]*(S[,2]%*%Y)),
+    z = c(0,S[3,2]*(S[,2]%*%Y)),
+    mode = "lines",
+    line = list(width = 5, color = "red",dash="dash"),
+    type="scatter3d",
+    name="Y -> S2") %>% add_trace(
+    x = c(Y[1],S[1,2]*(S[,2]%*%Y)),
+    y = c(Y[2],S[2,2]*(S[,2]%*%Y)),
+    z = c(Y[3],S[3,2]*(S[,2]%*%Y)),
+    mode = "lines",
+    line = list(width = 5, color = "red", dash="dash"),
+    type="scatter3d",
+    name="Y -> S2")
+p5
+```
+
+- Yhat is the resulting vector that lies in the plane spanned by $\mathbf{S}_1$ and $\mathbf{S}_2$ and thus also in the column space of $\mathbf{X}$.
+
+```{r}
+p6 <- p5 %>%
+  add_trace(
+    x = c(0,Yhat[1]),
+    y = c(0,Yhat[2]),
+    z = c(0,Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "orange"),
+    type="scatter3d",
+    name = "Yhat") %>%
+  add_trace(
+    x = c(Y[1],Yhat[1]),
+    y = c(Y[2],Yhat[2]),
+    z = c(Y[3],Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "maroon2"),
+    type="scatter3d",
+    name = "e") %>%
+  add_trace(
+    x = c(S[1,1]*(S[,1]%*%Y),Yhat[1]),
+    y = c(S[2,1]*(S[,1]%*%Y),Yhat[2]),
+    z = c(S[3,1]*(S[,1]%*%Y),Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "orange", dash="dash"),
+    type="scatter3d",
+    name = "Y -> S")  %>%
+  add_trace(
+    x = c(S[1,2]*(S[,2]%*%Y),Yhat[1]),
+    y = c(S[2,2]*(S[,2]%*%Y),Yhat[2]),
+    z = c(S[3,2]*(S[,2]%*%Y),Yhat[3]),
+    mode = "lines",
+    line = list(width = 5, color = "orange", dash="dash"),
+    type="scatter3d",
+    name = "Y -> S")
+p6
+```
+
+### Error
+
+Note, that it is also clear from the equation in the derivation of the least squares solution that the residual is orthogonal on the column space:
+
+\[
+ -2 \mathbf{X}^T(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}) = 0
+\]
+
+
+### Curse of dimensionality?
+
+- Imagine what happens when p approaches n $p=n$ or becomes much larger than p >> n!!!
+
+- Suppose that we add a predictor $\mathbf{X}_2 = [2,0,1]^T$?
+
+$$
+\mathbf{Y}=\left[
+\begin{array}{c}
+1\\
+2\\
+2\\
+\end{array}\right],
+\quad
+\mathbf{X}= \left[
+\begin{array}{ccc}
+1&1&2\\
+1&2&0\\
+1&3&1\\
+\end{array}
+\right],
+\quad \boldsymbol{\beta} = \left[
+\begin{array}{c}
+\beta_0\\
+\beta_1\\
+\beta_2
+\end{array}
+\right]
+\quad
+\text{and}
+\quad
+\boldsymbol{\epsilon}=
+\left[
+\begin{array}{c}
+\epsilon_1\\
+\epsilon_2\\
+\epsilon_3
+\end{array}
+\right]
+$$
+
+
+```{r}
+data$x2 <- c(2,0,1)
+fit <- lm(y~x+x2,data)
+# predict values on regular xy grid
+x1pred <- seq(-1, 4, length.out = 10)
+x2pred <- seq(-1, 4, length.out = 10)
+xy <- expand.grid(x = x1pred,
+x2 = x2pred)
+ypred <- matrix (nrow = 30, ncol = 30,
+data = predict(fit, newdata = data.frame(xy)))
+
+library(plot3D)
+
+
+# fitted points for droplines to surface
+th=20
+ph=5
+scatter3D(data$x,
+  data$x2,
+  Y,
+  pch = 16,
+  col="darkblue",
+  cex = 1,
+  theta = th,
+  ticktype = "detailed",
+  xlab = "x1",
+  ylab = "x2",
+  zlab = "y",
+  colvar=FALSE,
+  bty = "g",
+  xlim=c(-1,3),
+  ylim=c(-1,3),
+  zlim=c(-2,4))
+
+
+z.pred3D <- outer(
+  x1pred,
+  x2pred,
+  function(x1,x2)
+  {
+    fit$coef[1] + fit$coef[2]*x1+fit$coef[2]*x2
+  })
+
+x.pred3D <- outer(
+  x1pred,
+  x2pred,
+  function(x,y) x)
+
+y.pred3D <- outer(
+  x1pred,
+  x2pred,
+  function(x,y) y)
+
+scatter3D(data$x,
+  data$x2,
+  data$y,
+  pch = 16,
+  col="darkblue",
+  cex = 1,
+  theta = th,
+  ticktype = "detailed",
+  xlab = "x1",
+  ylab = "x2",
+  zlab = "y",
+  colvar=FALSE,
+  bty = "g",
+  xlim=c(-1,4),
+  ylim=c(-1,4),
+  zlim=c(-2,4))
+
+surf3D(
+  x.pred3D,
+  y.pred3D,
+  z.pred3D,
+  col="blue",
+  facets=NA,
+  add=TRUE)
+```
+
+Note, that the linear regression is now a plane.
+
+However, we obtain a perfect fit and all the data points are falling in the plane! `r set.seed(4); emoji::emoji("fear")`
+
+This is obvious if we look at the column space of X!
+
+```{r}
+X <- cbind(X,c(2,0,1))
+svdX <- svd(X) # SVD X = UDV^T
+XtXinvSqrt <- svdX$v %*%diag(1/svdX$d)%*%t(svdX$v)
+S <- X %*% XtXinvSqrt
+
+p7 <- p1 %>%
+  add_trace(
+    x = c(0,2),
+    y = c(0,0),
+    z = c(0,1),
+    mode = "lines",
+    line = list(width = 5, color = "darkgreen"),
+    type="scatter3d",
+    name = "X3")
+p7
+```
+
+```{r}
+p8 <- p7 %>%
+  add_trace(
+    x = c(0,S[1,1]),
+    y = c(0,S[2,1]),
+    z = c(0,S[3,1]),
+    mode = "lines",
+    line = list(width = 5, color = "blue"),
+    type="scatter3d",
+    name = "S1") %>%
+  add_trace(
+    x = c(0,S[1,2]),
+    y = c(0,S[2,2]),
+    z = c(0,S[3,2]),
+    mode = "lines",
+    line = list(width = 5, color = "blue"),
+    type="scatter3d",
+    name = "S2") %>%
+  add_trace(
+    x = c(0,S[1,3]),
+    y = c(0,S[2,3]),
+    z = c(0,S[3,3]),
+    mode = "lines",
+    line = list(width = 5, color = "blue"),
+    type="scatter3d",
+    name = "S3")
+
+p8
+```
+
+- The column space now spans the entire  $\mathbb{R}^3$!
+
+- With the intercept and the two predictors we can thus fit every dataset that only has 3 observations for the predictors and the response.
+
+- So the model can no longer be used to generalise the patterns seen in the data towards the population (new observations).
+
+- Problem of overfitting!!!
+
+- If $p >> n$ then the problem gets even worse! Then there is even no longer a unique solution to the least squares problem...
+
+- Indeed, then we have more vectors/dimensions/columns in X  than datapoints!
+
+
+### Variance Estimator?
+\[
+\begin{array}{ccl}
+\hat{\boldsymbol{\Sigma}}_{\hat{\boldsymbol{\beta}}}
+&=&\text{var}\left[(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{Y}\right]\\\\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\text{var}\left[\mathbf{Y}\right]\mathbf{X}(\mathbf{X}^T\mathbf{X})^{-1} \text{(*)}\\\\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T(\mathbf{I}\sigma^2)\mathbf{X}(\mathbf{X}^T\mathbf{X})^{-1}
+\\\\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{I}\quad\mathbf{X}(\mathbf{X}^T\mathbf{X})^{-1}\sigma^2\\\\
+%\hat{\boldmath{\Sigma}}_{\hat{\boldsymbol{\beta}}}&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T \text{var}\left[\mathbf{Y}\right](\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}\\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\mathbf{X}^T\mathbf{X}(\mathbf{X}^T\mathbf{X})^{-1}\sigma^2\\\\
+&=&(\mathbf{X}^T\mathbf{X})^{-1}\sigma^2
+\end{array}
+\]
+
+(*) Under assumption that all observations $\mathbf{Y}$ are independent and identically distributed.
+
+The fact that $\hat{\boldsymbol{\beta}}$ is unbiased and has a variance of $(\mathbf{X}^T\mathbf{X})^{-1}\sigma^2$ will be important when assessing association!
+
+### Projecting covariates out 
+
+We can get rid of covariates $\mathbf{X}_c$ by projecting them out, i.e. 
+
+$$
+\mathbf{P}_c = (\mathbf{I} - \mathbf{X}_x(\mathbf{X}_x^T\mathbf{X}_x)^{-1}\mathbf{X}_x^T)
+$$
+
+So one obtains 
+
+$$
+\begin{array}{ccccccccc}
+\mathbf{P}_c \mathbf{y} &=& \mathbf{P}_c \mathbf{x}_\text{test}\beta_\text{test}& + & \mathbf{P}_c \mathbf{X}_c\boldsymbol{\beta}_c &+ &\mathbf{P}_c \mathbf{Zu} &+&\mathbf{P}_c \boldsymbol{\epsilon} \\
+\tilde{\mathbf{y}} &=& \tilde{\mathbf{x}}_\text{test}\beta_\text{test} &+&\mathbf{0}&+ &\tilde{\mathbf{Z}}\mathbf{u} &+&\tilde{\boldsymbol{\epsilon}}
+\end{array}
+$$
+
+- $\mathbf{P}_x$ projects vectors to an (N − C)-dimensional subspace orthogonal on the known covariates. 
+- keep in mind that all these $N$ vectors all belong to the (N − C)-dimensional subspace!   
+$\rightarrow$ Important when estimating $\tilde{\mathbf{y}}$ and  $\tilde{\mathbf{Z}}$ 
+
+## Bolt-LMM uses a score test to test for the candidate SNP
+
+If all model assumptions hold we can derive a $\chi^2$ test under the null hypothesis $H_0: \boldsymbol{\beta}=\mathbf{0}$: 
+
+$$
+t=\hat{\beta}\hat{\boldsymbol{\Sigma}}_{\hat{\beta}}^{-1}\hat{\beta}
+$$
+which follows an asymptotic $\chi^2$ distribution under $H_0$. 
+
+In our case we only test for one model parameter, i.e. that of the candidate SNP so the test reduces to 
+
+$$
+t_{\chi^2}=\frac{\hat{\beta}_\text{test}^2}{\text{SE}_{\hat{\beta}_\text{test}}^2} 
+$$
+which follows an asymptotic $\chi^2_1$ distribution with one degree of freedom under $H_0$. 
+
+We need the estimator for $\hat{\beta}$ and $\hat{\boldsymbol{\Sigma}}$.
+
+### Intermezzo fitting linear mixed models (LMM)
+
+In the general formulation of LMM also allow random effects to be correlated. 
+
+$$
+\left\{
+\begin{array}{ccc}
+Y &=& \mathbf{X}\beta + \mathbf{Zu} + \boldsymbol{\epsilon}\\ 
+\mathbf{u} &\sim&\text{MVN}(\mathbf{0},\mathbf{G})\\
+\boldsymbol{\epsilon}  &\sim&\text{MVN}(\mathbf{0},\mathbf{I}\sigma^2_\epsilon)
+\end{array}
+\right.
+$$
+ 
+This expression implies three different model representations: 
+
+1. the conditional model (conditional on the random effects)
+
+$$
+f(\mathbf{Y}\vert \mathbf{X, u})\sim \text{MVN}(\mathbf{X}\boldsymbol{\beta}+\mathbf{Zu},\mathbf{I}\sigma^2_\epsilon)
+$$
+
+2. the joint model of $\mathbf{Y}$ and $\mathbf{u}$
+$$
+\begin{array}{ccl}
+f(\mathbf{Y, u}\vert \mathbf{X}) &\sim& f(\mathbf{Y}\vert \mathbf{X, u}) f(\mathbf{u}) \\\\
+&\sim&\text{MVN}(\mathbf{X}\boldsymbol{\beta}+\mathbf{Zu},\mathbf{I}\sigma^2_\epsilon)\times\text{MVN}(\mathbf{0},\mathbf{G})
+\end{array}
+$$
+3. Marginal model of $\mathbf{Y}$
+
+$$
+\begin{array}{rcl}
+f(\mathbf{Y}\vert \mathbf{X}) &\sim& \int f(\mathbf{Y, u}\vert \mathbf{X}) d\mathbf{u} \\\\
+&\sim& \text{MVN}(\mathbf{X}\boldsymbol{\beta},\mathbf{V})\\\\
+\mathbf{V} &=& \mathbf{ZG}\mathbf{Z}^T + \mathbf{I}\sigma^2_\epsilon
+\end{array}
+$$
+So estimating the mixed model implies estimating
+
+- Model parameters of fixed effects $\boldsymbol{\beta}$
+- Variance components $\mathbf{G}$ and $\sigma^2_\epsilon$
+
+$\rightarrow$ We can do that by using maximum likelihood. 
+
+- Choosing the data parameters as such so that the probability to observe the data under the marginal model becomes maximal 
+
+$$
+L(\boldsymbol{\beta}, \mathbf{G},\sigma^2_\epsilon \vert \mathbf{X, Y}) = \frac{1}{(2\pi)^{N/2}|\mathbf{V}|^{1/2}} \exp\left(-\frac{1}{2} (\mathbf{Y} - \mathbf{X}\boldsymbol{\beta})^T \mathbf{V}^{-1} (\mathbf{Y} - \mathbf{X}\boldsymbol{\beta})\right)
+$$
+This is nasty to maximise $\rightarrow$ maximise the log-likelihood
+
+$$
+l(\boldsymbol{\beta}, \mathbf{G},\sigma^2_\epsilon \vert \mathbf{X, Y}) = -\frac{N}{2} \log(2\pi) - \frac{1}{2} \log(|\mathbf{V}|) - \frac{1}{2}  (\mathbf{Y} - \mathbf{X}\boldsymbol{\beta})^T \mathbf{V}^{-1} (\mathbf{Y} - \mathbf{X}\boldsymbol{\beta})
+$$
+
+$$
+\begin{array}{rcl}
+\frac{\partial}{\partial \beta} l(\boldsymbol{\beta}, \mathbf{G},\sigma^2_\epsilon \vert \mathbf{X, Y}) &=& 0 \\\\
+\frac{1}{2} \mathbf{X}^T \mathbf{V}^{-1} (\mathbf{Y} - \mathbf{X}\boldsymbol{\beta}) &=& 0\\\\
+\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X}\boldsymbol{\beta} &=&\mathbf{X}^T \mathbf{V}^{-1} \mathbf{Y}\\\\
+\hat{\boldsymbol{\beta}} &=& (\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{V}^{-1} \mathbf{Y}
+\end{array}
+$$
+The variance-covariance matrix for this estimator  becomes: 
+
+$$
+\begin{array}{rcl}
+\text{var}\left[\hat{\boldsymbol{\beta}}\right] &=& \text{var}\left[(\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{V}^{-1} \mathbf{Y}\right]\\\\
+\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}} &=&(\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{V}^{-1} \text{var}\left[\mathbf{Y}\right] \mathbf{V}^{-1} \mathbf{X} (\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \\\\
+\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}} &=&(\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{V}^{-1} \mathbf{V} \mathbf{V}^{-1} \mathbf{X} (\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \\\\
+\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}} &=&(\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1}
+\end{array}
+$$
+So we only need to estimate the variance components $\mathbf{G}$ and $\sigma_\epsilon^2$. 
+
+- This can be done by the profile likelihood, i.e. replacing $\boldsymbol{\beta}$ by the ML estimator $(\mathbf{X}^T \mathbf{V}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \mathbf{V}^{-1} \mathbf{Y}$. 
+- We  then maximise the profile likelihood to $\mathbf{G}$ and $\sigma_\epsilon^2$ 
+- Note that the ML for the variance components are biased in small sample because it does not account for the loss in degrees of freedom due to the estimation of the fixed effect model parameters
+- Therefore, ML is often replaced by restricted maximum likelihood (REML) which adds a penalty term to the ML to correct for the loss in df.
+
+Once estimators for the variance components $\hat{\mathbf{G}}$ and $\hat{\sigma}_\epsilon^2$ are obtained we will plug them in $\mathbf{V}$, $\hat{\mathbf{\beta}}$ and $\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}}$
+
+
+
+
+$$
+\begin{array}{ccl}
+\hat{\mathbf{V}} &=& \mathbf{Z}\hat{\mathbf{G}}^{-1}\mathbf{Z}^T + \mathbf{I}\hat\sigma^2_\epsilon\\\\
+\hat{\boldsymbol{\beta}} &=& (\mathbf{X}^T \hat{\mathbf{V}}^{-1} \mathbf{X})^{-1} \mathbf{X}^T \hat{\mathbf{V}}^{-1} \mathbf{Y}\\\\
+\hat{\boldsymbol{\Sigma}}_\hat{\boldsymbol{\beta}} &=&(\mathbf{X}^T \hat{\mathbf{V}}^{-1} \mathbf{X})^{-1}
+\end{array}
+$$
+
+Note, that 
+
+- for our GWAS LMM $\mathbf{G} = \mathbf{I} \sigma^2_u$ and thus reduces to estimating $\sigma^2_u$
+- The optimisation for the variance components is computationally demanding 
+- $\hat{\boldsymbol{\beta}}$ and  $\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}}$ involve the computationally challenging calculation of 
+  
+  - $\hat{\mathbf{V}}^{-1}$ an $N \times N$  with $N > 70.000$ subjects
+  - $\mathbf{Z}_{GRM}^T\mathbf{Z}$ $M \times M$ with $M > 500.000$ high quality SNPs
+    
+### Adopting result to BOLT-LMM
+
+Note, that in BOLT-LMM they profiled out all fixed effect except for the candidate SNP.    
+\rightarrow so only one fixed effect parameter $\hat{\beta}_\text{test}$
+
+$$
+\begin{array}{ccl}
+\hat{\beta}_\text{test} &=& (\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{x}}_\text{test})^{-1}\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{y}} \\\\
+&=& \frac{(\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{y}})}{(\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{x}}_\text{test})}
+\end{array}
+$$
+Next, we need the $\text{SE}_{\hat{\beta}_\text{test}}$
+
+$$
+\text{SE}^2_{\hat{\beta}_\text{test}} = (\tilde{\mathbf{x}}^t_\text{test}\hat{\mathbf{V}}^{-1}\tilde{\mathbf{x}}^t_\text{test})^{-1}
+$$
+We plug $\hat{\beta}_\text{test}^2$ and $\text{SE}_{\hat{\beta}_\text{test}}^2$ in the $\chi^2$-test:
+
+$$ 
+\begin{array}{ccl}
+t_{\chi^2}&=&\frac{\hat{\beta}_\text{test}^2}{\text{SE}_{\hat{\beta}_\text{test}}^2} \\\\
+&=& \frac{(\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{y}})^2}{(\tilde{\mathbf{x}}^t_\text{test} \hat{\mathbf{V}}^{-1}\tilde{\mathbf{x}}_\text{test})}
+\end{array}
+$$ 
+which follows a $\chi^2_1$ with one degree of freedom. 
+
+We can construct a score test  by replacing the variance components $\sigma_\epsilon^2$ and $\sigma_u^2$ by their estimates under the model implied by $H_0: \beta_\text{test} = 0$: 
+
+$$ 
+\tilde{\mathbf{y}} \sim \text{MVN}(\mathbf{0},\mathbf{V})
+$$
+
+### LOCO score test
+
+Within a Leave One Chromosome Out (LOCO) scheme, the test statistic becomes
+
+$$ 
+\tag{4}
+t_\text{LOCO} = \frac{(\tilde{\mathbf{x}}^t_\text{test} \hat{V}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{y}})^2}{\tilde{\mathbf{x}}^t_\text{test} \hat{V}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}_\text{test}}
+$$
+
+$\rightarrow$ effect of candidate SNP not by diluted by proximal contamination.    
+$\rightarrow$ variance components under $H_0$     
+$\rightarrow$ $\hat{V}^{-1}_{\text{LOCO}, H_0}$  is the same for all candidate SNPs from the same chromosome. 
+
+## BOLT-LMM-inf
+
+"The BOLT-LMM-inf infinitesimal mixed-model statistic is slightly different"
+
+### Denominator LOCO statistic 
+
+Under the assumption that many loci with small effects control the trait, the denominator of the LOCO score test  
+
+$$
+\tilde{\mathbf{x}}^t_\text{test} {V}^{-1}_\text{LOCO}\tilde{\mathbf{x}}^t_\text{test}
+$$  
+
+is  very similar between all candidate SNPs 
+
+$\rightarrow$ can be replaced by a calibration factor that only has to be estimated once! 
+
+
+The BOLT-LMM-inf statistics thus becomes: 
+
+$$t_\text{BOLT-LMM-inf} = \frac{(\tilde{\mathbf{x}}^t_\text{test} \hat{V}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{y}})^2}{c_\text{inf}}$$ 
+
+which follows a $\chi^2_1$ under $H_0$.
+
+- Calibration factor estimated with 30 random SNPs without effect.
+
+- Important to keep in mind:   
+
+$$ c_\text{inf} \leftrightarrow \tilde{\mathbf{x}}^T\hat{\mathbf{V}}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}$$
+
+## Generalisation of BOLT-LMM-inf
+
+"We now generalize BOLT-LMM-inf by obsering that the vector $\mathbf{V}^{-1}_{\text{LOCO},H_0} \mathbf{y}$ appearing in equation (8) is a scalar multiple of the residual phenotype $\sigma^2_\epsilon \mathbf{V}^{-1}_{\text{LOCO},H_0} \mathbf{y}$ from the best linear unbiased prediction (BLUP)"
+
+### What is the best linear unbiased predictor BLUP?
+
+
+- The random effects can be predicted using the BLUP
+- An estimator for the fixed effects and for the prediction of the random effects can be derived from the joint-likelihood of $\mathbf{Y}$ and $\mathbf{u}$, i.e. 
+
+
+Maximising the log of the joint density $f(\mathbf{Y},\mathbf{u}\vert \mathbf{X})$ to $\mathbf{u}$ and $\boldsymbol{\beta}$: 
+
+$$
+\text{argmax}_{\mathbf{u},\boldsymbol{\beta}} \left[
+ -\frac{N}{2}\log( \sigma^2_\epsilon)-\frac{1}{2\sigma^2_\epsilon}\left(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}-\mathbf{Zu}\right)^T\left(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}-\mathbf{Zu}\right)-1/2\log(\vert\mathbf{G}\vert)-\frac{1}{2}\mathbf{u}^T\mathbf{G}^{-1}\mathbf{u}\right]
+$$
+
+Maximisation to $\boldsymbol{\theta}=\left[\begin{array}{c} \boldsymbol{\beta}\\\mathbf{u}\end{array}\right]$ only involves
+
+$$
+-\frac{1}{2\sigma^2_\epsilon}\left(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}-\mathbf{Zu}\right)^T\left(\mathbf{Y}-\mathbf{X}\boldsymbol{\beta}-\mathbf{Zu}\right)-\frac{1}{2}\mathbf{u}^T\mathbf{G}^{-1}\mathbf{u}
+$$
+which can be rewritten as a kind of loss function that we will minimise
+
+$$
+L^{MM}=(\mathbf{Y}-\mathbf{C}\boldsymbol{\theta})^T(\mathbf{Y}-\mathbf{C}\boldsymbol{\theta})+{\sigma^2_\epsilon}\boldsymbol{\theta}^T\mathbf{H}\boldsymbol{\theta}
+$$
+
+with $\mathbf{H}=\left[\begin{array}{cc}
+\mathbf{0}&\mathbf{0}\\
+\mathbf{0}&\mathbf{G}^{-1}
+\end{array}
+\right]$ and $\mathbf{C}=[\mathbf{X}\text{ } \mathbf{Z}]$
+
+We can find the estimator for $\boldsymbol{\theta}$ by taken the first derivative of $L^{MM}$ to $\boldsymbol{\theta}$ and setting it to zero, 
+$$
+\begin{array}{rcl}
+\frac{\partial }{\partial \boldsymbol{\theta}} L^{MM} &=& 0\\\\
+-2 \mathbf{C}^T(\mathbf{Y}-\mathbf{C}\boldsymbol{\theta})+2 {\sigma^2_\epsilon} H\boldsymbol{\theta}&=&0\\\\
+-\mathbf{C}^T\mathbf{Y}+\mathbf{C}^T\mathbf{C}\boldsymbol{\theta}+ {\sigma^2_\epsilon} H\boldsymbol{\theta}&=&0\\\\
+ (\mathbf{C}^T\mathbf{C} + \sigma^2_\epsilon H)\boldsymbol{\theta} &=&\mathbf{C}^T\mathbf{Y}\\\\
+ \hat{\boldsymbol{\theta}} &=&  (\mathbf{C}^T\mathbf{C} + \sigma^2_\epsilon H)^{-1}\mathbf{C}^T\mathbf{Y}
+\end{array}
+$$
+
+For our GWAS - LMM this reduces to 
+
+$$
+\left[\begin{array}{c} \hat{\boldsymbol{\beta}}\\\hat{\mathbf{u}}\end{array}\right] =  
+\left(
+\left[
+\begin{array}{cc}
+\mathbf{X}^T\mathbf{X}& \mathbf{X}^T\mathbf{Z}\\
+\mathbf{Z}^T\mathbf{X}& \mathbf{Z}^T\mathbf{Z}
+\end{array}
+\right] + 
+\frac{\sigma^2_\epsilon}{\sigma^2_u} 
+\left[
+\begin{array}{cc}
+\mathbf{0}& \mathbf{0}\\
+\mathbf{0}& \mathbf{I}
+\end{array}
+\right]
+\right)^{-1}
+\left[
+\begin{array}{c}
+\mathbf{X}^T\\
+\mathbf{Z}^T
+\end{array}
+\right]\mathbf{Y}
+$$
+
+It can also be shown that $\hat{\mathbf{u}}$ for the conventional LMM equals 
+
+$$
+\hat{\mathbf{u}}= \hat{\mathbf{G}}\mathbf{Z}^T\hat{\mathbf{V}}^{− 1} (\mathbf{Y} − \mathbf{X} \hat{\boldsymbol{\beta}})
+$$ 
+
+and for our GWAS-LMM
+
+$$
+\hat{\mathbf{u}}= \hat{\sigma}^2_u\mathbf{Z}^T\hat{\mathbf{V}}^{− 1} (\mathbf{Y} − \mathbf{X} \hat{\boldsymbol{\beta}})
+$$
+
+### Adopting result to the Nominator LOCO statistic of the BOLT-LMM-inf statistic
+
+Moreover, under $H_0: \beta_\text{test}=0$ the BLUP for the LOCO SNPs becomes  
+
+$$
+\hat{\mathbf{u}}_{\text{LOCO}, H_0} = \hat\sigma^2_{u,\text{LOCO},H_0}\mathbf{Z}^T\hat{\mathbf{V}}^{− 1}_{\text{LOCO}, H_0} \tilde{\mathbf{y}} 
+$$
+$\rightarrow$ BLUP residuals become 
+
+$$
+\begin{array}{ccl}
+\mathbf{y}_\text{residual-LOCO, H_0} &=& \tilde{\mathbf{y}} - \mathbf{Z}\hat{\mathbf{u}}_{\text{LOCO}, H_0}\\ \\
+&=& \hat{\mathbf{V}}_{\text{LOCO}, H_0}\hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}}-\mathbf{Z}\mathbf{Z}^T\hat\sigma^2_{u,\text{LOCO},H_0} \hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}} \\\\
+&=& (\hat{\mathbf{V}}_{\text{LOCO}, H_0}-\mathbf{Z}\mathbf{Z}^T\hat\sigma^2_{u,\text{LOCO},H_0}) \hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}} \\\\
+&=& \hat\sigma^2_{\epsilon,LOCO,H_0}\hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}}
+\end{array}
+$$
+$\rightarrow$ nominator of LOCO score test upon a factor equal to: 
+
+$$
+(\tilde{\mathbf{x}}^t_\text{test} \mathbf{y}_\text{residual-LOCO, H_0})^2
+$$
+
+BOLT-LMM-inf statistic thus becomes: 
+
+$$t_\text{BOLT-LMM-inf} = \frac{(\tilde{\mathbf{x}}^t_\text{test} \mathbf{y}_\text{residual-LOCO, H_0})^2}{c}$$ 
+with c the adjusted calibration factor.
+
+## BOLT-LMM Gaussian mixture-model association test 
+
+To generalise the estimation to non-infinitesimal genetic architextures they replace the Gaussian prior on the SNP effects sizes $u_m$ by a 
+Gaussian mixture prior : 
+
+$$u_m \sim p N(0,\sigma^2_{u,1}) + (1-p) N(0,\sigma^2_{u,2})$$
+
+with a small probability $p << 1$ and $\sigma^2_{u,1} >> \sigma^2_{u,2}$.
+
+- "This mixture more flexibly models the heavier-tailed distributions of the genetic effects of typical (non-infinitesimal) phenotypes."
+
+- "The first component in the mixture is a 'slab' that models the existence of a small number of loci with relatively large effects and the second component is a ‘spike’ that models the assumption that most SNPs have an effect of nearly—but not exactly—zero on the phenotype."
+
+- "(Note, however, that all SNPs are assigned the same mixture prior; that is, SNPs are not individually allocated to one or the other component.)"
+
+- "It is important that the spike component have nonzero variance so as to capture genome-wide effects on phenotype such as ancestry or relatedness; then, when testing SNPs for association, these genome-wide effects are conditioned out from residual phenotypes, protecting against confounding."
+
+- "Under this generalized model, posterior means no longer correspond to BLUP, but we can still approximately fit the Bayesian model (once per left-out chromosome) and obtain residuals"
+
+- "Plugging these residuals into equation (11) gives the BOLT-LMM Gaussian mixture-model association test statistic."

@@ -1,0 +1,340 @@
+---
+title: "Under the hood of REGENIE"
+author: "Lieven Clement"
+date: "statOmics, Ghent University (https://statomics.github.io)"
+output:
+    bookdown::html_document2:
+      code_download: true
+      df_print: paged
+      theme: flatly
+      highlight: tango
+      toc: true
+      toc_float: true
+      number_sections: true
+      code_folding: show
+---
+
+# Key idea
+
+- Another fast approach to fit the GWAS-LMM. 
+- Builds on the developments in BOLT-LMM
+
+1. Project known covariates $\mathbf{X}_c$ out 
+2. Take BOLT-LMM-inf idea to use LOCO-residuals under the null model. 
+3. Exploit link between mixed models and ridge regression for fast approximation of LOCO-BLUP under $H_0$. 
+4. Model LOCO residuals using candidate SNP. 
+
+$$
+\mathbf{y}_\text{residual-LOCO, H_0} = \tilde{\mathbf{x}}^T_\text{test} \boldsymbol{\beta}_\text{test} + \epsilon
+$$
+
+5. Use a score test similar to BOLT-LMM-inf 
+
+$$
+T = \frac{(\tilde{\mathbf{x}}^T_\text{test}\mathbf{y}_\text{residual-LOCO, H_0})^2}{\hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}}}
+$$
+
+6. Estimate $\hat{\sigma}^2_\epsilon$ under the null model: 
+
+$$
+\hat\sigma^2_\epsilon = \frac{\vert\vert\mathbf{y}_\text{residual-LOCO, H_0}\vert\vert^2_2}{N-C}
+$$ 
+
+- In contrast to BOLT-LMM-inf no calibration factor used in denominator
+- they "found in applications that the results obtained using this simple form match up closely to those using a calibration factor"
+
+**Key contribution efficiently obtain $\mathbf{y}_\text{residual-LOCO, H_0}$**
+
+- Check method section [paper](https://www.nature.com/articles/s41588-021-00870-7.pdf)
+- As usual in publications: to understand the methods, it is all about the [supplement](https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf)
+
+
+# Intermezzo ridge regression
+
+- Penalized regression useful in a high dimensional context when the number of covariates are larger than the number of samples (e.g. M >> N)
+- When covariates are highly correlated
+
+```{r echo=FALSE, message= FALSE}
+library(tidyverse)
+library(gridExtra)
+```
+
+
+ The ridge parameter estimator is defined as the parameter $\mathbf\beta$ that minimises the **penalised least squares loss function**
+
+ \[
+ \text{SSE}_\text{pen}=\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 + \lambda \Vert \boldsymbol{\beta} \Vert_2^2
+\]
+
+- $\Vert \boldsymbol{\beta} \Vert_2^2=\sum_{j=1}^p \beta_j^2$ is the **$L_2$ penalty term**
+
+- $\lambda>0$ is the penalty parameter (to be chosen by the user).
+
+Note, that that is equivalent to minimizing
+\[
+\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 \text{ subject to } \Vert \boldsymbol{\beta}\Vert^2_2\leq s
+\]
+
+Note, that $s$ has a one-to-one correspondence with $\lambda$
+
+## Graphical interpretation
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+library(ggforce)
+library(latex2exp)
+library(gridExtra)
+
+p1 <- ggplot() +
+  geom_ellipse(aes(x0 = 4, y0 = 11, a = 10, b = 3, angle = pi / 4)) +
+  geom_ellipse(aes(x0 = 4, y0 = 11, a = 5, b = 1.5, angle = pi / 4)) +
+  xlim(-12.5, 12.5) +
+  ylim(-5, 20) +
+  geom_point(aes(x = 4, y = 11)) +
+  annotate("text", label = TeX("$(\\hat{\\beta}_1^{ols}, \\hat{\\beta}_2^{ols})$"), x = -5, y = 15, size = 6, parse = TRUE) +
+  xlab(TeX("$\\beta_1$")) +
+  ylab(TeX("$\\beta_2$")) +
+  geom_segment(
+    aes(x = -5, y = 12.5, xend = 3.7, yend = 11.3),
+    arrow = arrow(length = unit(0.25, "cm"))
+    ) +
+  coord_fixed()
+
+pRidge <- p1 +
+  geom_circle(aes(x0 = 0, y0 = 0, r = 3.9) , color = "red") +
+  geom_point(aes(x = -1.1, y = 3.75), color = "red") +
+  annotate("text", label = TeX("$(\\hat{\\beta}_1^{ridge}, \\hat{\\beta}_2^{ridge})$"), x = -8.1, y = 4.45, size = 6, parse = TRUE, color = "red") +
+  ggtitle("Ridge") +
+  geom_vline(xintercept = 0, color = "grey") +
+  geom_hline(yintercept = 0, color = "grey") +
+  theme_minimal()
+
+pRidge
+```
+
+- Ridge estimator can switch sign as compared to OLS. 
+
+## Estimator
+
+The loss function to be minimised is
+  \[
+   L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = \text{SSE}_\text{pen}=\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 + \lambda \Vert \boldsymbol{\beta} \Vert_2^2.
+ \]
+ 
+ First we re-express the loss function in matrix notation:
+ \[
+   L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = (\mathbf{Y}-\mathbf{X\beta})^T(\mathbf{Y}-\mathbf{X\beta}) + \lambda \boldsymbol{\beta}^T\boldsymbol{\beta}.
+ \]
+ 
+ Solving $L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)=0$ gives
+ 
+ $$
+ \begin{array}{rcl}
+   \frac{\partial}{\partial \boldsymbol{\beta}}L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)  
+   &=& 0 \\\\
+-2\mathbf{X}^T(\mathbf{Y}-\mathbf{X\beta})+2\lambda\boldsymbol{\beta} &=& 0\\\\
+\hat{\boldsymbol{\beta}} &=& (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} \mathbf{X^T Y}
+
+   \end{array}
+$$
+
+It can be shown that $(\mathbf{X^TX}+\lambda \mathbf{I})$ is always of rank $p$ if $\lambda>0$.
+
+Hence, $(\mathbf{X^TX}+\lambda \mathbf{I})$ is invertible and $\hat{\boldsymbol{\beta}}$ exists even if $p>>>n$.
+
+## Link with SVD
+
+Write the SVD of $\mathbf{X}$ ($p>N$) as
+\[
+   \mathbf{X} = \sum_{i=1}^N \delta_i \mathbf{u}_i \mathbf{v}_i^T = \sum_{i=1}^p \delta_i \mathbf{u}_i \mathbf{v}_i^T  = \mathbf{U}\boldsymbol{\Delta} \mathbf{V}^T ,
+\]
+with
+
+- $\delta_{n+1}=\delta_{n+2}= \cdots = \delta_p=0$
+
+- $\boldsymbol{\Delta}$ a $p\times p$ diagonal matrix of the $\delta_1,\ldots, \delta_p$
+
+-  $\mathbf{U}$ an $n\times p$ matrix and $\mathbf{V}$ a $p \times p$ matrix. Note that only the first $n$ columns of $\mathbf{U}$ and $\mathbf{V}$ are informative.
+
+With the SVD of $\mathbf{X}$ we write
+ \[
+   \mathbf{X}^T\mathbf{X} = \mathbf{V}\boldsymbol{\Delta
+     }^2\mathbf{V}^T.
+ \]
+ The inverse of $\mathbf{X}^T\mathbf{X}$ is then given by
+ \[
+   (\mathbf{X}^T\mathbf{X})^{-1} = \mathbf{V}\boldsymbol{\Delta}^{-2}\mathbf{V}^T.
+ \]
+ Since $\boldsymbol{\Delta}$ has $\delta_{n+1}=\delta_{n+2}= \cdots = \delta_p=0$, it is not invertible.
+
+
+Note that it can be shown that
+\[
+  \mathbf{X^TX}+\lambda \mathbf{I} = \mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I}) \mathbf{V}^T ,
+\]
+i.e. adding a constant to the diagonal elements does not affect the eigenvectors, and all eigenvalues are increased by this constant.   
+$\longrightarrow$ zero eigenvalues become $\lambda$.
+
+Hence,
+\[
+  (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} = \mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \mathbf{V}^T ,
+\]
+which can be computed even when some eigenvalues in $\boldsymbol{\Delta}^2$ are zero.
+
+Note, that for high dimensional data ($p>>>N$) many eigenvalues are zero because $\mathbf{X^TX}$ is a $p \times p$ matrix and has rank $N$.
+
+## Properties ridge
+
+- The Ridge estimator is biased! The $\boldsymbol{\beta}$ are shrunken to zero!
+\begin{eqnarray}
+ \text{E}[\hat{\boldsymbol{\beta}}] &=& (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} \mathbf{X}^T \text{E}[\mathbf{Y}]\\\\
+&=& (\mathbf{X}^T\mathbf{X}+\lambda \mathbf{I})^{-1} \mathbf{X}^T \mathbf{X}\boldsymbol{\beta}\\
+\end{eqnarray}
+
+- Note, that the shrinkage is larger in the direction of the smaller eigenvalues.
+
+\begin{eqnarray}
+\text{E}[\hat{\boldsymbol{\beta}}]&=&\mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \mathbf{V}^T \mathbf{V} \boldsymbol{\Delta}^2 \mathbf{V}^T\boldsymbol{\beta}\\\\
+&=&\mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \boldsymbol{\Delta}^2 \mathbf{V}^T\boldsymbol{\beta}\\\\
+&=& \mathbf{V}
+\left[\begin{array}{ccc}
+\frac{\delta_1^2}{\delta_1^2+\lambda}&\ldots&0 \\
+&\vdots&\\
+0&\ldots&\frac{\delta_r^2}{\delta_r^2+\lambda}
+\end{array}\right]
+\mathbf{V}^T\boldsymbol{\beta}
+\end{eqnarray}
+
+- Ridge regression can lead to parameters that switch sign if penality increases
+
+
+## Toxicogenomics example
+
+- N = 30 chemical compounds have been screened for toxicity
+
+- Bioassay data on toxicity screening
+
+- Gene expressions in a liver cell line are profiled for each compound (M = 4000 genes)
+
+- Predict Bioassay score in function of gene expression.
+
+```{r}
+toxData <- read_csv(
+  "https://raw.githubusercontent.com/statOmics/HDA2020/data/toxDataCentered.csv",
+  col_types = cols()
+)
+dim(toxData)
+
+lmFit <- lm (BA ~. , toxData)
+lmFit %>%  
+  coef %>% 
+  head(40)
+
+lmFit %>% 
+  coef %>% 
+  is.na %>% 
+  sum
+
+lmFit %>% 
+  coef %>% 
+  is.na %>% 
+  `!` %>% 
+  sum 
+```
+
+```{r}
+library(glmnet)
+mRidge <- glmnet(
+  x = toxData[,-1] %>%
+    as.matrix,
+  y = toxData %>%
+    pull(BA),
+  alpha = 0) # ridge: alpha = 0
+
+plot(mRidge, xvar="lambda")
+```
+
+## No penalisation of some parameters 
+
+ Note, that we typically do not penalise the intercept. We can do this by introducing matrix 
+ 
+ $$
+ \mathbf{D} = \left[\begin{array}{ccc}0& 0 \\ 0&\mathbf{I}\end{array}\right]
+ $$
+ And let 
+ $$
+ \mathbf{C} = \left[ \begin{array}{cc} 1 & \mathbf{1}\\\mathbf{1}&\mathbf{X}_{1\ldots p}\end{array}\right] \text{ and } \boldsymbol{\theta} =\left[\begin{array}{c}\beta_0\\
+ \boldsymbol{\beta}_{1\ldots p}\end{array}\right]
+ $$ 
+ 
+with $\mathbf{X}_{1\ldots p}$ the matrix of the predictors for which the slope terms $\boldsymbol {\beta}_{1\ldots p}$ are estimated. 
+ 
+ The loss function then becomes
+ 
+ $$
+ L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = (\mathbf{Y}-\mathbf{C\theta})^T(\mathbf{Y}-\mathbf{C\theta}) + \lambda \boldsymbol{\beta}^T\mathbf{D}\boldsymbol{\theta}.
+ $$
+ 
+and the ridge estimator then becomes
+ 
+ $$
+\hat{\boldsymbol{\beta}} = (\mathbf{C^TC}+\lambda \mathbf{D})^{-1} \mathbf{C^T Y}
+$$
+
+
+## Link LMM
+
+Add Gaussian prior on the model parameters/specify the fixed effects as random effects 
+
+$$
+\begin{array}{ccl}
+\mathbf{Y} &=& \mathbf{1}\beta_0 + \mathbf{X}_{1\ldots p} \boldsymbol{\beta}_{1\ldots p} + \boldsymbol{\epsilon}\\
+\boldsymbol{\beta}_{1\ldots p} &\sim& \text{MVN}(0,\mathbf{I}\sigma^2_\beta) \\
+\boldsymbol{\epsilon} &\sim& \text{MVN}(0,\mathbf{I}\sigma^2_\epsilon) \\
+\end{array}
+$$ 
+
+Note that we know from LMM theory that the BLUP is
+
+$$
+ \hat{\boldsymbol{\theta}} =  (\mathbf{C}^T\mathbf{C} + \sigma^2_\epsilon H)^{-1}\mathbf{C}^T\mathbf{Y}
+$$
+with
+
+$$
+ \mathbf{H}=\left[\begin{array}{cc}
+\mathbf{0}&\mathbf{0}\\
+\mathbf{0}&\mathbf{G}^{-1}
+\end{array}\right] = \left[\begin{array}{cc}
+\mathbf{0}&\mathbf{0}\\
+\mathbf{0}&\sigma^{-2}_{\beta}\mathbf{I}
+\end{array}\right] = \sigma^{-2}_\beta \mathbf{D}
+$$
+
+So the BLUP reduces to 
+
+$$
+ \hat{\boldsymbol{\theta}} =  (\mathbf{C}^T\mathbf{C} + \frac{\sigma^2_\epsilon}{\sigma^2_\beta} \mathbf{D})^{-1}\mathbf{C}^T\mathbf{Y}
+$$
+
+which is equivalent to the ridge solution! 
+
+- $\frac{\sigma^2_\epsilon}{\sigma^2_\beta}$ plays the role of  ridge penalty $\lambda$ in ridge regression. 
+
+- we can exploit the mixed model machinery to perform ridge regression and to estimate the penalty parameter using variance components. 
+
+
+$\rightarrow$ Regenie is exploiting this link to avoid computational complexity of fitting LMMs.    
+$\rightarrow$ Revisit to [supplement](https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf)
+
+
+# Remarks 
+
+- Use of R different penalties $\lambda_1 \ldots \lambda_R$ as a proxy to allow for different random effect variances
+- Construct R predictions for phenotype with different penalties per block 
+- Combine the predictors in a stacked predictor 
+- I feel that this also allows deviations of the infinitesimal model
+- Danger that it is not well calibrated: indeed nominator
+
+$$
+\hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}} \leftrightarrow \tilde{\mathbf{x}}^T\hat{\mathbf{V}}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}
+$$
