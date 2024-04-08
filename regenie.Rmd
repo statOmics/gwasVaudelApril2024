@@ -14,6 +14,9 @@ output:
       code_folding: show
 ---
 
+- [REGENIE Paper](https://www.nature.com/articles/s41588-021-00870-7.pdf)
+- [Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf)
+
 # Key idea
 
 - Another fast approach to fit the GWAS-LMM. 

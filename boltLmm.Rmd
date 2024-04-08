@@ -14,10 +14,14 @@ output:
       code_folding: show
 ---
 
-```{r libraries, message=FALSE, warning=FALSE}
+```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
 library(tidyverse)
 library(plotly)
 ```
+
+- [BOLT-LMM paper](https://www.nature.com/articles/ng.3190.pdf)
+- [Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fng.3190/MediaObjects/41588_2015_BFng3190_MOESM5_ESM.pdf)
+
 
 
 # Linear mixed model for GWAS
@@ -212,7 +216,7 @@ E[Y \mid x_1, x_2, x_3] = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3
 and
 \[
 \begin{array}{rcl}
- \beta_1 &=& E[Y\mid x_1=b+1, x_2=s, x_3 = a] - E[Y\mid x_1=b]\\\\ 
+ \beta_1 &=& E[Y\mid x_1=b+1, x_2=s, x_3 = a] - E[Y\mid x_1=b, x_2=s, x_3 = a]\\\\ 
  &=& \beta_0 + \beta_1 (b+1) + \beta_3 s + \beta_3 a  - \beta_0 - \beta_1 b - \beta_3 s - \beta_3 a.
 \end{array}
 \]
@@ -1171,11 +1175,11 @@ $$
 L^{MM}=(\mathbf{Y}-\mathbf{C}\boldsymbol{\theta})^T(\mathbf{Y}-\mathbf{C}\boldsymbol{\theta})+{\sigma^2_\epsilon}\boldsymbol{\theta}^T\mathbf{H}\boldsymbol{\theta}
 $$
 
-with $\mathbf{H}=\left[\begin{array}{cc}
+with $\mathbf{C}=[\mathbf{X}\text{ } \mathbf{Z}]$ and $\mathbf{H}=\left[\begin{array}{cc}
 \mathbf{0}&\mathbf{0}\\
 \mathbf{0}&\mathbf{G}^{-1}
 \end{array}
-\right]$ and $\mathbf{C}=[\mathbf{X}\text{ } \mathbf{Z}]$
+\right]$
 
 We can find the estimator for $\boldsymbol{\theta}$ by taken the first derivative of $L^{MM}$ to $\boldsymbol{\theta}$ and setting it to zero, 
 $$
@@ -1241,6 +1245,7 @@ $$
 \mathbf{y}_\text{residual-LOCO, H_0} &=& \tilde{\mathbf{y}} - \mathbf{Z}\hat{\mathbf{u}}_{\text{LOCO}, H_0}\\ \\
 &=& \hat{\mathbf{V}}_{\text{LOCO}, H_0}\hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}}-\mathbf{Z}\mathbf{Z}^T\hat\sigma^2_{u,\text{LOCO},H_0} \hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}} \\\\
 &=& (\hat{\mathbf{V}}_{\text{LOCO}, H_0}-\mathbf{Z}\mathbf{Z}^T\hat\sigma^2_{u,\text{LOCO},H_0}) \hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}} \\\\
+&=& (\mathbf{Z}^T\mathbf{Z}\hat{\sigma}^2_{u\text{LOCO}, H_0}+\mathbf{I}\hat{\sigma}^2\epsilon-\mathbf{Z}\mathbf{Z}^T\hat\sigma^2_{u,\text{LOCO},H_0}) \hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}} \\\\
 &=& \hat\sigma^2_{\epsilon,LOCO,H_0}\hat{\mathbf{V}}_{\text{LOCO}, H_0}^{-1}\tilde{\mathbf{y}}
 \end{array}
 $$
