@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Lieven Clement" />
+
+
+<title>Under the hood of REGENIE</title>
+
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/flatly.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
+<script src="site_libs/navigation-1.1/sourceembed.js"></script>
+<link href="site_libs/pagedtable-1.1/css/pagedtable.css" rel="stylesheet" />
+<script src="site_libs/pagedtable-1.1/js/pagedtable.js"></script>
+<link href="site_libs/font-awesome-6.4.2/css/all.min.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/v4-shims.min.css" rel="stylesheet" />
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+<style type="text/css">
+  code {
+    white-space: pre;
+  }
+  .sourceCode {
+    overflow: visible;
+  }
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {  background-color: #f8f8f8; }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ef2929; } /* Alert */
+code span.an { color: #8f5902; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #c4a000; } /* Attribute */
+code span.bn { color: #0000cf; } /* BaseN */
+code span.cf { color: #204a87; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4e9a06; } /* Char */
+code span.cn { color: #000000; } /* Constant */
+code span.co { color: #8f5902; font-style: italic; } /* Comment */
+code span.cv { color: #8f5902; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #8f5902; font-weight: bold; font-style: italic; } /* Documentation */
+code span.dt { color: #204a87; } /* DataType */
+code span.dv { color: #0000cf; } /* DecVal */
+code span.er { color: #a40000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #0000cf; } /* Float */
+code span.fu { color: #000000; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #8f5902; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #204a87; font-weight: bold; } /* Keyword */
+code span.op { color: #ce5c00; font-weight: bold; } /* Operator */
+code span.ot { color: #8f5902; } /* Other */
+code span.pp { color: #8f5902; font-style: italic; } /* Preprocessor */
+code span.sc { color: #000000; } /* SpecialChar */
+code span.ss { color: #4e9a06; } /* SpecialString */
+code span.st { color: #4e9a06; } /* String */
+code span.va { color: #000000; } /* Variable */
+code span.vs { color: #4e9a06; } /* VerbatimString */
+code span.wa { color: #8f5902; font-weight: bold; font-style: italic; } /* Warning */
+
+.sourceCode .row {
+  width: 100%;
+}
+.sourceCode {
+  overflow-x: auto;
+}
+.code-folding-btn {
+  margin-right: -30px;
+}
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+<style type="text/css">
+#rmd-source-code {
+  display: none;
+}
+</style>
+
+
+<link rel="stylesheet" href="style.css" type="text/css" />
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">GWAS</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">
+    <span class="fa fa-home"></span>
+     
+  </a>
+</li>
+<li class="dropdown">
+  <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+    <span class="fa fa-chalkboard-teacher"></span>
+     
+    Journal clubs
+     
+    <span class="caret"></span>
+  </a>
+  <ul class="dropdown-menu" role="menu">
+    <li>
+      <a href="boltLmm.html">1. BOLT-LMM</a>
+    </li>
+    <li>
+      <a href="regenie.html">2. REGENIE</a>
+    </li>
+  </ul>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        <li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="https://github.com/statOmics/gwasVaudelApril2024">
+    <span class="fab fa-github"></span>
+     
+  </a>
+</li>
+<li>
+  <a href="http://statomics.github.io/">statOmics</a>
+</li>
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+<li role="separator" class="divider"></li>
+<li><a id="rmd-download-source" href="#">Download Rmd</a></li>
+</ul>
+</div>
+
+
+
+<h1 class="title toc-ignore">Under the hood of REGENIE</h1>
+<h4 class="author">Lieven Clement</h4>
+<h4 class="date">statOmics, Ghent University (<a href="https://statomics.github.io" class="uri">https://statomics.github.io</a>)</h4>
+
+</div>
+
+
+<ul>
+<li><a href="https://www.nature.com/articles/s41588-021-00870-7.pdf">REGENIE Paper</a></li>
+<li><a href="https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf">Supplementary Information</a></li>
+</ul>
+<div id="key-idea" class="section level1" number="1">
+<h1><span class="header-section-number">1</span> Key idea</h1>
+<ul>
+<li>Another fast approach to fit the GWAS-LMM.</li>
+<li>Builds on the developments in BOLT-LMM</li>
+</ul>
+<ol style="list-style-type: decimal">
+<li>Project known covariates <span class="math inline">\(\mathbf{X}_c\)</span> out</li>
+<li>Take BOLT-LMM-inf idea to use LOCO-residuals under the null model.</li>
+<li>Exploit link between mixed models and ridge regression for fast approximation of LOCO-BLUP under <span class="math inline">\(H_0\)</span>.</li>
+<li>Model LOCO residuals using candidate SNP.</li>
+</ol>
+<p><span class="math display">\[
+\mathbf{y}_\text{residual-LOCO, H_0} = \tilde{\mathbf{x}}^T_\text{test} \boldsymbol{\beta}_\text{test} + \epsilon
+\]</span></p>
+<ol start="5" style="list-style-type: decimal">
+<li>Use a score test similar to BOLT-LMM-inf</li>
+</ol>
+<p><span class="math display">\[
+T = \frac{(\tilde{\mathbf{x}}^T_\text{test}\mathbf{y}_\text{residual-LOCO, H_0})^2}{\hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}}}
+\]</span></p>
+<ol start="6" style="list-style-type: decimal">
+<li>Estimate <span class="math inline">\(\hat{\sigma}^2_\epsilon\)</span> under the null model:</li>
+</ol>
+<p><span class="math display">\[
+\hat\sigma^2_\epsilon = \frac{\vert\vert\mathbf{y}_\text{residual-LOCO, H_0}\vert\vert^2_2}{N-C}
+\]</span></p>
+<ul>
+<li>In contrast to BOLT-LMM-inf no calibration factor used in denominator</li>
+<li>they “found in applications that the results obtained using this simple form match up closely to those using a calibration factor”</li>
+</ul>
+<p><strong>Key contribution efficiently obtain <span class="math inline">\(\mathbf{y}_\text{residual-LOCO, H_0}\)</span></strong></p>
+<ul>
+<li>Check method section <a href="https://www.nature.com/articles/s41588-021-00870-7.pdf">paper</a></li>
+<li>As usual in publications: to understand the methods, it is all about the <a href="https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf">supplement</a></li>
+</ul>
+</div>
+<div id="intermezzo-ridge-regression" class="section level1" number="2">
+<h1><span class="header-section-number">2</span> Intermezzo ridge regression</h1>
+<ul>
+<li>Penalized regression useful in a high dimensional context when the number of covariates are larger than the number of samples (e.g. M &gt;&gt; N)</li>
+<li>When covariates are highly correlated</li>
+</ul>
+<p>The ridge parameter estimator is defined as the parameter <span class="math inline">\(\mathbf\beta\)</span> that minimises the <strong>penalised least squares loss function</strong></p>
+<p><span class="math display">\[
+\text{SSE}_\text{pen}=\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 + \lambda \Vert \boldsymbol{\beta} \Vert_2^2
+\]</span></p>
+<ul>
+<li><p><span class="math inline">\(\Vert \boldsymbol{\beta} \Vert_2^2=\sum_{j=1}^p \beta_j^2\)</span> is the <strong><span class="math inline">\(L_2\)</span> penalty term</strong></p></li>
+<li><p><span class="math inline">\(\lambda&gt;0\)</span> is the penalty parameter (to be chosen by the user).</p></li>
+</ul>
+<p>Note, that that is equivalent to minimizing
+<span class="math display">\[
+\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 \text{ subject to } \Vert \boldsymbol{\beta}\Vert^2_2\leq s
+\]</span></p>
+<p>Note, that <span class="math inline">\(s\)</span> has a one-to-one correspondence with <span class="math inline">\(\lambda\)</span></p>
+<div id="graphical-interpretation" class="section level2" number="2.1">
+<h2><span class="header-section-number">2.1</span> Graphical interpretation</h2>
+<p><img src="regenie_files/figure-html/unnamed-chunk-2-1.png" width="672" /></p>
+<ul>
+<li>Ridge estimator can switch sign as compared to OLS.</li>
+</ul>
+</div>
+<div id="estimator" class="section level2" number="2.2">
+<h2><span class="header-section-number">2.2</span> Estimator</h2>
+<p>The loss function to be minimised is
+<span class="math display">\[
+   L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = \text{SSE}_\text{pen}=\Vert\mathbf{Y} - \mathbf{X\beta}\Vert_2^2 + \lambda \Vert \boldsymbol{\beta} \Vert_2^2.
+\]</span></p>
+<p>First we re-express the loss function in matrix notation:
+<span class="math display">\[
+   L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = (\mathbf{Y}-\mathbf{X\beta})^T(\mathbf{Y}-\mathbf{X\beta}) + \lambda \boldsymbol{\beta}^T\boldsymbol{\beta}.
+\]</span></p>
+<p>Solving <span class="math inline">\(L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)=0\)</span> gives</p>
+$$
+<span class="math display">\[\begin{array}{rcl}
+   \frac{\partial}{\partial \boldsymbol{\beta}}L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)  
+   &amp;=&amp; 0 \\\\
+-2\mathbf{X}^T(\mathbf{Y}-\mathbf{X\beta})+2\lambda\boldsymbol{\beta} &amp;=&amp; 0\\\\
+\hat{\boldsymbol{\beta}} &amp;=&amp; (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} \mathbf{X^T Y}
+
+   \end{array}\]</span>
+<p>$$</p>
+<p>It can be shown that <span class="math inline">\((\mathbf{X^TX}+\lambda \mathbf{I})\)</span> is always of rank <span class="math inline">\(p\)</span> if <span class="math inline">\(\lambda&gt;0\)</span>.</p>
+<p>Hence, <span class="math inline">\((\mathbf{X^TX}+\lambda \mathbf{I})\)</span> is invertible and <span class="math inline">\(\hat{\boldsymbol{\beta}}\)</span> exists even if <span class="math inline">\(p&gt;&gt;&gt;n\)</span>.</p>
+</div>
+<div id="link-with-svd" class="section level2" number="2.3">
+<h2><span class="header-section-number">2.3</span> Link with SVD</h2>
+<p>Write the SVD of <span class="math inline">\(\mathbf{X}\)</span> (<span class="math inline">\(p&gt;N\)</span>) as
+<span class="math display">\[
+   \mathbf{X} = \sum_{i=1}^N \delta_i \mathbf{u}_i \mathbf{v}_i^T = \sum_{i=1}^p \delta_i \mathbf{u}_i \mathbf{v}_i^T  = \mathbf{U}\boldsymbol{\Delta} \mathbf{V}^T ,
+\]</span>
+with</p>
+<ul>
+<li><p><span class="math inline">\(\delta_{n+1}=\delta_{n+2}= \cdots = \delta_p=0\)</span></p></li>
+<li><p><span class="math inline">\(\boldsymbol{\Delta}\)</span> a <span class="math inline">\(p\times p\)</span> diagonal matrix of the <span class="math inline">\(\delta_1,\ldots, \delta_p\)</span></p></li>
+<li><p><span class="math inline">\(\mathbf{U}\)</span> an <span class="math inline">\(n\times p\)</span> matrix and <span class="math inline">\(\mathbf{V}\)</span> a <span class="math inline">\(p \times p\)</span> matrix. Note that only the first <span class="math inline">\(n\)</span> columns of <span class="math inline">\(\mathbf{U}\)</span> and <span class="math inline">\(\mathbf{V}\)</span> are informative.</p></li>
+</ul>
+<p>With the SVD of <span class="math inline">\(\mathbf{X}\)</span> we write
+<span class="math display">\[
+   \mathbf{X}^T\mathbf{X} = \mathbf{V}\boldsymbol{\Delta
+     }^2\mathbf{V}^T.
+\]</span>
+The inverse of <span class="math inline">\(\mathbf{X}^T\mathbf{X}\)</span> is then given by
+<span class="math display">\[
+   (\mathbf{X}^T\mathbf{X})^{-1} = \mathbf{V}\boldsymbol{\Delta}^{-2}\mathbf{V}^T.
+\]</span>
+Since <span class="math inline">\(\boldsymbol{\Delta}\)</span> has <span class="math inline">\(\delta_{n+1}=\delta_{n+2}= \cdots = \delta_p=0\)</span>, it is not invertible.</p>
+<p>Note that it can be shown that
+<span class="math display">\[
+  \mathbf{X^TX}+\lambda \mathbf{I} = \mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I}) \mathbf{V}^T ,
+\]</span>
+i.e. adding a constant to the diagonal elements does not affect the eigenvectors, and all eigenvalues are increased by this constant.<br />
+<span class="math inline">\(\longrightarrow\)</span> zero eigenvalues become <span class="math inline">\(\lambda\)</span>.</p>
+<p>Hence,
+<span class="math display">\[
+  (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} = \mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \mathbf{V}^T ,
+\]</span>
+which can be computed even when some eigenvalues in <span class="math inline">\(\boldsymbol{\Delta}^2\)</span> are zero.</p>
+<p>Note, that for high dimensional data (<span class="math inline">\(p&gt;&gt;&gt;N\)</span>) many eigenvalues are zero because <span class="math inline">\(\mathbf{X^TX}\)</span> is a <span class="math inline">\(p \times p\)</span> matrix and has rank <span class="math inline">\(N\)</span>.</p>
+</div>
+<div id="properties-ridge" class="section level2" number="2.4">
+<h2><span class="header-section-number">2.4</span> Properties ridge</h2>
+<ul>
+<li><p>The Ridge estimator is biased! The <span class="math inline">\(\boldsymbol{\beta}\)</span> are shrunken to zero!
+<span class="math display">\[\begin{eqnarray}
+\text{E}[\hat{\boldsymbol{\beta}}] &amp;=&amp; (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} \mathbf{X}^T \text{E}[\mathbf{Y}]\\\\
+&amp;=&amp; (\mathbf{X}^T\mathbf{X}+\lambda \mathbf{I})^{-1} \mathbf{X}^T \mathbf{X}\boldsymbol{\beta}\\
+\end{eqnarray}\]</span></p></li>
+<li><p>Note, that the shrinkage is larger in the direction of the smaller eigenvalues.</p></li>
+</ul>
+<p><span class="math display">\[\begin{eqnarray}
+\text{E}[\hat{\boldsymbol{\beta}}]&amp;=&amp;\mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \mathbf{V}^T \mathbf{V} \boldsymbol{\Delta}^2 \mathbf{V}^T\boldsymbol{\beta}\\\\
+&amp;=&amp;\mathbf{V} (\boldsymbol{\Delta}^2+\lambda \mathbf{I})^{-1} \boldsymbol{\Delta}^2 \mathbf{V}^T\boldsymbol{\beta}\\\\
+&amp;=&amp; \mathbf{V}
+\left[\begin{array}{ccc}
+\frac{\delta_1^2}{\delta_1^2+\lambda}&amp;\ldots&amp;0 \\
+&amp;\vdots&amp;\\
+0&amp;\ldots&amp;\frac{\delta_r^2}{\delta_r^2+\lambda}
+\end{array}\right]
+\mathbf{V}^T\boldsymbol{\beta}
+\end{eqnarray}\]</span></p>
+<ul>
+<li>Ridge regression can lead to parameters that switch sign if penality increases</li>
+</ul>
+</div>
+<div id="toxicogenomics-example" class="section level2" number="2.5">
+<h2><span class="header-section-number">2.5</span> Toxicogenomics example</h2>
+<ul>
+<li><p>N = 30 chemical compounds have been screened for toxicity</p></li>
+<li><p>Bioassay data on toxicity screening</p></li>
+<li><p>Gene expressions in a liver cell line are profiled for each compound (M = 4000 genes)</p></li>
+<li><p>Predict Bioassay score in function of gene expression.</p></li>
+</ul>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>toxData <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;https://raw.githubusercontent.com/statOmics/HDA2020/data/toxDataCentered.csv&quot;</span>,</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">col_types =</span> <span class="fu">cols</span>()</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="fu">dim</span>(toxData)</span></code></pre></div>
+<pre><code>## [1]   30 4001</code></pre>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>lmFit <span class="ot">&lt;-</span> <span class="fu">lm</span> (BA <span class="sc">~</span>. , toxData)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>lmFit <span class="sc">%&gt;%</span>  </span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  coef <span class="sc">%&gt;%</span> </span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">head</span>(<span class="dv">40</span>)</span></code></pre></div>
+<pre><code>##   (Intercept)            X1            X2            X3            X4 
+## -2.059917e-17 -7.456994e+00  3.571348e-01  1.124923e+01  1.083540e+01 
+##            X5            X6            X7            X8            X9 
+## -1.374339e+01  5.683387e+00  6.553878e+01  4.340456e+00  7.910392e+00 
+##           X10           X11           X12           X13           X14 
+##  3.702961e+01 -5.483687e+01 -5.555478e+01  5.792467e+00  2.314280e+01 
+##           X15           X16           X17           X18           X19 
+## -6.961036e+00 -2.852506e+01 -2.255090e+01 -9.796237e+01 -3.041718e+01 
+##           X20           X21           X22           X23           X24 
+## -3.269917e+01 -1.428088e+01 -1.614313e+01 -2.274987e+01  7.316352e+01 
+##           X25           X26           X27           X28           X29 
+## -5.706583e+00  3.747454e+01 -2.019991e+01  1.499068e+01  9.960810e+01 
+##           X30           X31           X32           X33           X34 
+##            NA            NA            NA            NA            NA 
+##           X35           X36           X37           X38           X39 
+##            NA            NA            NA            NA            NA</code></pre>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>lmFit <span class="sc">%&gt;%</span> </span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  coef <span class="sc">%&gt;%</span> </span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  is.na <span class="sc">%&gt;%</span> </span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  sum</span></code></pre></div>
+<pre><code>## [1] 3971</code></pre>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>lmFit <span class="sc">%&gt;%</span> </span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  coef <span class="sc">%&gt;%</span> </span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  is.na <span class="sc">%&gt;%</span> </span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">`</span><span class="at">!</span><span class="st">`</span> <span class="sc">%&gt;%</span> </span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  sum </span></code></pre></div>
+<pre><code>## [1] 30</code></pre>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(glmnet)</span></code></pre></div>
+<pre><code>## Loading required package: Matrix</code></pre>
+<pre><code>## 
+## Attaching package: &#39;Matrix&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:tidyr&#39;:
+## 
+##     expand, pack, unpack</code></pre>
+<pre><code>## Loaded glmnet 4.1-8</code></pre>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>mRidge <span class="ot">&lt;-</span> <span class="fu">glmnet</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">x =</span> toxData[,<span class="sc">-</span><span class="dv">1</span>] <span class="sc">%&gt;%</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    as.matrix,</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">y =</span> toxData <span class="sc">%&gt;%</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">pull</span>(BA),</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">alpha =</span> <span class="dv">0</span>) <span class="co"># ridge: alpha = 0</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(mRidge, <span class="at">xvar=</span><span class="st">&quot;lambda&quot;</span>)</span></code></pre></div>
+<p><img src="regenie_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+</div>
+<div id="no-penalisation-of-some-parameters" class="section level2" number="2.6">
+<h2><span class="header-section-number">2.6</span> No penalisation of some parameters</h2>
+<p>Note, that we typically do not penalise the intercept. We can do this by introducing matrix</p>
+<p><span class="math display">\[
+\mathbf{D} = \left[\begin{array}{ccc}0&amp; 0 \\ 0&amp;\mathbf{I}\end{array}\right]
+\]</span>
+And let
+<span class="math display">\[
+\mathbf{C} = \left[ \begin{array}{cc} 1 &amp; \mathbf{1}\\\mathbf{1}&amp;\mathbf{X}_{1\ldots p}\end{array}\right] \text{ and } \boldsymbol{\theta} =\left[\begin{array}{c}\beta_0\\
+\boldsymbol{\beta}_{1\ldots p}\end{array}\right]
+\]</span></p>
+<p>with <span class="math inline">\(\mathbf{X}_{1\ldots p}\)</span> the matrix of the predictors for which the slope terms <span class="math inline">\(\boldsymbol {\beta}_{1\ldots p}\)</span> are estimated.</p>
+<p>The loss function then becomes</p>
+<p><span class="math display">\[
+L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda) = (\mathbf{Y}-\mathbf{C\theta})^T(\mathbf{Y}-\mathbf{C\theta}) + \lambda \boldsymbol{\beta}^T\mathbf{D}\boldsymbol{\theta}.
+\]</span></p>
+<p>and the ridge estimator then becomes</p>
+<p><span class="math display">\[
+\hat{\boldsymbol{\beta}} = (\mathbf{C^TC}+\lambda \mathbf{D})^{-1} \mathbf{C^T Y}
+\]</span></p>
+</div>
+<div id="link-lmm" class="section level2" number="2.7">
+<h2><span class="header-section-number">2.7</span> Link LMM</h2>
+<p>Add Gaussian prior on the model parameters/specify the fixed effects as random effects</p>
+<p><span class="math display">\[
+\begin{array}{ccl}
+\mathbf{Y} &amp;=&amp; \mathbf{1}\beta_0 + \mathbf{X}_{1\ldots p} \boldsymbol{\beta}_{1\ldots p} + \boldsymbol{\epsilon}\\
+\boldsymbol{\beta}_{1\ldots p} &amp;\sim&amp; \text{MVN}(0,\mathbf{I}\sigma^2_\beta) \\
+\boldsymbol{\epsilon} &amp;\sim&amp; \text{MVN}(0,\mathbf{I}\sigma^2_\epsilon) \\
+\end{array}
+\]</span></p>
+<p>Note that we know from LMM theory that the BLUP is</p>
+<p><span class="math display">\[
+\hat{\boldsymbol{\theta}} =  (\mathbf{C}^T\mathbf{C} + \sigma^2_\epsilon H)^{-1}\mathbf{C}^T\mathbf{Y}
+\]</span>
+with</p>
+<p><span class="math display">\[
+\mathbf{H}=\left[\begin{array}{cc}
+\mathbf{0}&amp;\mathbf{0}\\
+\mathbf{0}&amp;\mathbf{G}^{-1}
+\end{array}\right] = \left[\begin{array}{cc}
+\mathbf{0}&amp;\mathbf{0}\\
+\mathbf{0}&amp;\sigma^{-2}_{\beta}\mathbf{I}
+\end{array}\right] = \sigma^{-2}_\beta \mathbf{D}
+\]</span></p>
+<p>So the BLUP reduces to</p>
+<p><span class="math display">\[
+\hat{\boldsymbol{\theta}} =  (\mathbf{C}^T\mathbf{C} + \frac{\sigma^2_\epsilon}{\sigma^2_\beta} \mathbf{D})^{-1}\mathbf{C}^T\mathbf{Y}
+\]</span></p>
+<p>which is equivalent to the ridge solution!</p>
+<ul>
+<li><p><span class="math inline">\(\frac{\sigma^2_\epsilon}{\sigma^2_\beta}\)</span> plays the role of ridge penalty <span class="math inline">\(\lambda\)</span> in ridge regression.</p></li>
+<li><p>we can exploit the mixed model machinery to perform ridge regression and to estimate the penalty parameter using variance components.</p></li>
+</ul>
+<p><span class="math inline">\(\rightarrow\)</span> Regenie is exploiting this link to avoid computational complexity of fitting LMMs.<br />
+<span class="math inline">\(\rightarrow\)</span> Revisit to <a href="https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf">supplement</a></p>
+</div>
+</div>
+<div id="remarks" class="section level1" number="3">
+<h1><span class="header-section-number">3</span> Remarks</h1>
+<ul>
+<li>Use of R different penalties <span class="math inline">\(\lambda_1 \ldots \lambda_R\)</span> as a proxy to allow for different random effect variances</li>
+<li>Construct R predictions for phenotype with different penalties per block</li>
+<li>Combine the predictors in a stacked predictor</li>
+<li>I feel that this also allows deviations of the infinitesimal model</li>
+<li>Danger that it is not well calibrated: indeed nominator</li>
+</ul>
+<p><span class="math display">\[
+\hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}} \leftrightarrow \tilde{\mathbf{x}}^T\hat{\mathbf{V}}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}
+\]</span></p>
+</div>
+
+<div id="rmd-source-code">LS0tCnRpdGxlOiAiVW5kZXIgdGhlIGhvb2Qgb2YgUkVHRU5JRSIKYXV0aG9yOiAiTGlldmVuIENsZW1lbnQiCmRhdGU6ICJzdGF0T21pY3MsIEdoZW50IFVuaXZlcnNpdHkgKGh0dHBzOi8vc3RhdG9taWNzLmdpdGh1Yi5pbykiCm91dHB1dDoKICAgIGJvb2tkb3duOjpodG1sX2RvY3VtZW50MjoKICAgICAgY29kZV9kb3dubG9hZDogdHJ1ZQogICAgICBkZl9wcmludDogcGFnZWQKICAgICAgdGhlbWU6IGZsYXRseQogICAgICBoaWdobGlnaHQ6IHRhbmdvCiAgICAgIHRvYzogdHJ1ZQogICAgICB0b2NfZmxvYXQ6IHRydWUKICAgICAgbnVtYmVyX3NlY3Rpb25zOiB0cnVlCiAgICAgIGNvZGVfZm9sZGluZzogc2hvdwotLS0KCi0gW1JFR0VOSUUgUGFwZXJdKGh0dHBzOi8vd3d3Lm5hdHVyZS5jb20vYXJ0aWNsZXMvczQxNTg4LTAyMS0wMDg3MC03LnBkZikKLSBbU3VwcGxlbWVudGFyeSBJbmZvcm1hdGlvbl0oaHR0cHM6Ly9zdGF0aWMtY29udGVudC5zcHJpbmdlci5jb20vZXNtL2FydCUzQTEwLjEwMzglMkZzNDE1ODgtMDIxLTAwODcwLTcvTWVkaWFPYmplY3RzLzQxNTg4XzIwMjFfODcwX01PRVNNMV9FU00ucGRmKQoKIyBLZXkgaWRlYQoKLSBBbm90aGVyIGZhc3QgYXBwcm9hY2ggdG8gZml0IHRoZSBHV0FTLUxNTS4gCi0gQnVpbGRzIG9uIHRoZSBkZXZlbG9wbWVudHMgaW4gQk9MVC1MTU0KCjEuIFByb2plY3Qga25vd24gY292YXJpYXRlcyAkXG1hdGhiZntYfV9jJCBvdXQgCjIuIFRha2UgQk9MVC1MTU0taW5mIGlkZWEgdG8gdXNlIExPQ08tcmVzaWR1YWxzIHVuZGVyIHRoZSBudWxsIG1vZGVsLiAKMy4gRXhwbG9pdCBsaW5rIGJldHdlZW4gbWl4ZWQgbW9kZWxzIGFuZCByaWRnZSByZWdyZXNzaW9uIGZvciBmYXN0IGFwcHJveGltYXRpb24gb2YgTE9DTy1CTFVQIHVuZGVyICRIXzAkLiAKNC4gTW9kZWwgTE9DTyByZXNpZHVhbHMgdXNpbmcgY2FuZGlkYXRlIFNOUC4gCgokJApcbWF0aGJme3l9X1x0ZXh0e3Jlc2lkdWFsLUxPQ08sIEhfMH0gPSBcdGlsZGV7XG1hdGhiZnt4fX1eVF9cdGV4dHt0ZXN0fSBcYm9sZHN5bWJvbHtcYmV0YX1fXHRleHR7dGVzdH0gKyBcZXBzaWxvbgokJAoKNS4gVXNlIGEgc2NvcmUgdGVzdCBzaW1pbGFyIHRvIEJPTFQtTE1NLWluZiAKCiQkClQgPSBcZnJhY3soXHRpbGRle1xtYXRoYmZ7eH19XlRfXHRleHR7dGVzdH1cbWF0aGJme3l9X1x0ZXh0e3Jlc2lkdWFsLUxPQ08sIEhfMH0pXjJ9e1xoYXRcc2lnbWFeMl9cZXBzaWxvblx0aWxkZXtcbWF0aGJme3h9fV5UXHRpbGRle1xtYXRoYmZ7eH19fQokJAoKNi4gRXN0aW1hdGUgJFxoYXR7XHNpZ21hfV4yX1xlcHNpbG9uJCB1bmRlciB0aGUgbnVsbCBtb2RlbDogCgokJApcaGF0XHNpZ21hXjJfXGVwc2lsb24gPSBcZnJhY3tcdmVydFx2ZXJ0XG1hdGhiZnt5fV9cdGV4dHtyZXNpZHVhbC1MT0NPLCBIXzB9XHZlcnRcdmVydF4yXzJ9e04tQ30KJCQgCgotIEluIGNvbnRyYXN0IHRvIEJPTFQtTE1NLWluZiBubyBjYWxpYnJhdGlvbiBmYWN0b3IgdXNlZCBpbiBkZW5vbWluYXRvcgotIHRoZXkgImZvdW5kIGluIGFwcGxpY2F0aW9ucyB0aGF0IHRoZSByZXN1bHRzIG9idGFpbmVkIHVzaW5nIHRoaXMgc2ltcGxlIGZvcm0gbWF0Y2ggdXAgY2xvc2VseSB0byB0aG9zZSB1c2luZyBhIGNhbGlicmF0aW9uIGZhY3RvciIKCioqS2V5IGNvbnRyaWJ1dGlvbiBlZmZpY2llbnRseSBvYnRhaW4gJFxtYXRoYmZ7eX1fXHRleHR7cmVzaWR1YWwtTE9DTywgSF8wfSQqKgoKLSBDaGVjayBtZXRob2Qgc2VjdGlvbiBbcGFwZXJdKGh0dHBzOi8vd3d3Lm5hdHVyZS5jb20vYXJ0aWNsZXMvczQxNTg4LTAyMS0wMDg3MC03LnBkZikKLSBBcyB1c3VhbCBpbiBwdWJsaWNhdGlvbnM6IHRvIHVuZGVyc3RhbmQgdGhlIG1ldGhvZHMsIGl0IGlzIGFsbCBhYm91dCB0aGUgW3N1cHBsZW1lbnRdKGh0dHBzOi8vc3RhdGljLWNvbnRlbnQuc3ByaW5nZXIuY29tL2VzbS9hcnQlM0ExMC4xMDM4JTJGczQxNTg4LTAyMS0wMDg3MC03L01lZGlhT2JqZWN0cy80MTU4OF8yMDIxXzg3MF9NT0VTTTFfRVNNLnBkZikKCgojIEludGVybWV6em8gcmlkZ2UgcmVncmVzc2lvbgoKLSBQZW5hbGl6ZWQgcmVncmVzc2lvbiB1c2VmdWwgaW4gYSBoaWdoIGRpbWVuc2lvbmFsIGNvbnRleHQgd2hlbiB0aGUgbnVtYmVyIG9mIGNvdmFyaWF0ZXMgYXJlIGxhcmdlciB0aGFuIHRoZSBudW1iZXIgb2Ygc2FtcGxlcyAoZS5nLiBNID4+IE4pCi0gV2hlbiBjb3ZhcmlhdGVzIGFyZSBoaWdobHkgY29ycmVsYXRlZAoKYGBge3IgZWNobz1GQUxTRSwgbWVzc2FnZT0gRkFMU0V9CmxpYnJhcnkodGlkeXZlcnNlKQpsaWJyYXJ5KGdyaWRFeHRyYSkKYGBgCgoKIFRoZSByaWRnZSBwYXJhbWV0ZXIgZXN0aW1hdG9yIGlzIGRlZmluZWQgYXMgdGhlIHBhcmFtZXRlciAkXG1hdGhiZlxiZXRhJCB0aGF0IG1pbmltaXNlcyB0aGUgKipwZW5hbGlzZWQgbGVhc3Qgc3F1YXJlcyBsb3NzIGZ1bmN0aW9uKioKCiBcWwogXHRleHR7U1NFfV9cdGV4dHtwZW59PVxWZXJ0XG1hdGhiZntZfSAtIFxtYXRoYmZ7WFxiZXRhfVxWZXJ0XzJeMiArIFxsYW1iZGEgXFZlcnQgXGJvbGRzeW1ib2x7XGJldGF9IFxWZXJ0XzJeMgpcXQoKLSAkXFZlcnQgXGJvbGRzeW1ib2x7XGJldGF9IFxWZXJ0XzJeMj1cc3VtX3tqPTF9XnAgXGJldGFfal4yJCBpcyB0aGUgKiokTF8yJCBwZW5hbHR5IHRlcm0qKgoKLSAkXGxhbWJkYT4wJCBpcyB0aGUgcGVuYWx0eSBwYXJhbWV0ZXIgKHRvIGJlIGNob3NlbiBieSB0aGUgdXNlcikuCgpOb3RlLCB0aGF0IHRoYXQgaXMgZXF1aXZhbGVudCB0byBtaW5pbWl6aW5nClxbClxWZXJ0XG1hdGhiZntZfSAtIFxtYXRoYmZ7WFxiZXRhfVxWZXJ0XzJeMiBcdGV4dHsgc3ViamVjdCB0byB9IFxWZXJ0IFxib2xkc3ltYm9se1xiZXRhfVxWZXJ0XjJfMlxsZXEgcwpcXQoKTm90ZSwgdGhhdCAkcyQgaGFzIGEgb25lLXRvLW9uZSBjb3JyZXNwb25kZW5jZSB3aXRoICRcbGFtYmRhJAoKIyMgR3JhcGhpY2FsIGludGVycHJldGF0aW9uCgpgYGB7ciBlY2hvID0gRkFMU0UsIHdhcm5pbmcgPSBGQUxTRSwgbWVzc2FnZSA9IEZBTFNFfQpsaWJyYXJ5KGdnZm9yY2UpCmxpYnJhcnkobGF0ZXgyZXhwKQpsaWJyYXJ5KGdyaWRFeHRyYSkKCnAxIDwtIGdncGxvdCgpICsKICBnZW9tX2VsbGlwc2UoYWVzKHgwID0gNCwgeTAgPSAxMSwgYSA9IDEwLCBiID0gMywgYW5nbGUgPSBwaSAvIDQpKSArCiAgZ2VvbV9lbGxpcHNlKGFlcyh4MCA9IDQsIHkwID0gMTEsIGEgPSA1LCBiID0gMS41LCBhbmdsZSA9IHBpIC8gNCkpICsKICB4bGltKC0xMi41LCAxMi41KSArCiAgeWxpbSgtNSwgMjApICsKICBnZW9tX3BvaW50KGFlcyh4ID0gNCwgeSA9IDExKSkgKwogIGFubm90YXRlKCJ0ZXh0IiwgbGFiZWwgPSBUZVgoIiQoXFxoYXR7XFxiZXRhfV8xXntvbHN9LCBcXGhhdHtcXGJldGF9XzJee29sc30pJCIpLCB4ID0gLTUsIHkgPSAxNSwgc2l6ZSA9IDYsIHBhcnNlID0gVFJVRSkgKwogIHhsYWIoVGVYKCIkXFxiZXRhXzEkIikpICsKICB5bGFiKFRlWCgiJFxcYmV0YV8yJCIpKSArCiAgZ2VvbV9zZWdtZW50KAogICAgYWVzKHggPSAtNSwgeSA9IDEyLjUsIHhlbmQgPSAzLjcsIHllbmQgPSAxMS4zKSwKICAgIGFycm93ID0gYXJyb3cobGVuZ3RoID0gdW5pdCgwLjI1LCAiY20iKSkKICAgICkgKwogIGNvb3JkX2ZpeGVkKCkKCnBSaWRnZSA8LSBwMSArCiAgZ2VvbV9jaXJjbGUoYWVzKHgwID0gMCwgeTAgPSAwLCByID0gMy45KSAsIGNvbG9yID0gInJlZCIpICsKICBnZW9tX3BvaW50KGFlcyh4ID0gLTEuMSwgeSA9IDMuNzUpLCBjb2xvciA9ICJyZWQiKSArCiAgYW5ub3RhdGUoInRleHQiLCBsYWJlbCA9IFRlWCgiJChcXGhhdHtcXGJldGF9XzFee3JpZGdlfSwgXFxoYXR7XFxiZXRhfV8yXntyaWRnZX0pJCIpLCB4ID0gLTguMSwgeSA9IDQuNDUsIHNpemUgPSA2LCBwYXJzZSA9IFRSVUUsIGNvbG9yID0gInJlZCIpICsKICBnZ3RpdGxlKCJSaWRnZSIpICsKICBnZW9tX3ZsaW5lKHhpbnRlcmNlcHQgPSAwLCBjb2xvciA9ICJncmV5IikgKwogIGdlb21faGxpbmUoeWludGVyY2VwdCA9IDAsIGNvbG9yID0gImdyZXkiKSArCiAgdGhlbWVfbWluaW1hbCgpCgpwUmlkZ2UKYGBgCgotIFJpZGdlIGVzdGltYXRvciBjYW4gc3dpdGNoIHNpZ24gYXMgY29tcGFyZWQgdG8gT0xTLiAKCiMjIEVzdGltYXRvcgoKVGhlIGxvc3MgZnVuY3Rpb24gdG8gYmUgbWluaW1pc2VkIGlzCiAgXFsKICAgTF9cdGV4dHtyaWRnZX0oXG1hdGhiZntZfSxcYm9sZHN5bWJvbHtcYmV0YX0sXGxhbWJkYSkgPSBcdGV4dHtTU0V9X1x0ZXh0e3Blbn09XFZlcnRcbWF0aGJme1l9IC0gXG1hdGhiZntYXGJldGF9XFZlcnRfMl4yICsgXGxhbWJkYSBcVmVydCBcYm9sZHN5bWJvbHtcYmV0YX0gXFZlcnRfMl4yLgogXF0KIAogRmlyc3Qgd2UgcmUtZXhwcmVzcyB0aGUgbG9zcyBmdW5jdGlvbiBpbiBtYXRyaXggbm90YXRpb246CiBcWwogICBMX1x0ZXh0e3JpZGdlfShcbWF0aGJme1l9LFxib2xkc3ltYm9se1xiZXRhfSxcbGFtYmRhKSA9IChcbWF0aGJme1l9LVxtYXRoYmZ7WFxiZXRhfSleVChcbWF0aGJme1l9LVxtYXRoYmZ7WFxiZXRhfSkgKyBcbGFtYmRhIFxib2xkc3ltYm9se1xiZXRhfV5UXGJvbGRzeW1ib2x7XGJldGF9LgogXF0KIAogU29sdmluZyAkTF9cdGV4dHtyaWRnZX0oXG1hdGhiZntZfSxcYm9sZHN5bWJvbHtcYmV0YX0sXGxhbWJkYSk9MCQgZ2l2ZXMKIAogJCQKIFxiZWdpbnthcnJheX17cmNsfQogICBcZnJhY3tccGFydGlhbH17XHBhcnRpYWwgXGJvbGRzeW1ib2x7XGJldGF9fUxfXHRleHR7cmlkZ2V9KFxtYXRoYmZ7WX0sXGJvbGRzeW1ib2x7XGJldGF9LFxsYW1iZGEpICAKICAgJj0mIDAgXFxcXAotMlxtYXRoYmZ7WH1eVChcbWF0aGJme1l9LVxtYXRoYmZ7WFxiZXRhfSkrMlxsYW1iZGFcYm9sZHN5bWJvbHtcYmV0YX0gJj0mIDBcXFxcClxoYXR7XGJvbGRzeW1ib2x7XGJldGF9fSAmPSYgKFxtYXRoYmZ7WF5UWH0rXGxhbWJkYSBcbWF0aGJme0l9KV57LTF9IFxtYXRoYmZ7WF5UIFl9CgogICBcZW5ke2FycmF5fQokJAoKSXQgY2FuIGJlIHNob3duIHRoYXQgJChcbWF0aGJme1heVFh9K1xsYW1iZGEgXG1hdGhiZntJfSkkIGlzIGFsd2F5cyBvZiByYW5rICRwJCBpZiAkXGxhbWJkYT4wJC4KCkhlbmNlLCAkKFxtYXRoYmZ7WF5UWH0rXGxhbWJkYSBcbWF0aGJme0l9KSQgaXMgaW52ZXJ0aWJsZSBhbmQgJFxoYXR7XGJvbGRzeW1ib2x7XGJldGF9fSQgZXhpc3RzIGV2ZW4gaWYgJHA+Pj5uJC4KCiMjIExpbmsgd2l0aCBTVkQKCldyaXRlIHRoZSBTVkQgb2YgJFxtYXRoYmZ7WH0kICgkcD5OJCkgYXMKXFsKICAgXG1hdGhiZntYfSA9IFxzdW1fe2k9MX1eTiBcZGVsdGFfaSBcbWF0aGJme3V9X2kgXG1hdGhiZnt2fV9pXlQgPSBcc3VtX3tpPTF9XnAgXGRlbHRhX2kgXG1hdGhiZnt1fV9pIFxtYXRoYmZ7dn1faV5UICA9IFxtYXRoYmZ7VX1cYm9sZHN5bWJvbHtcRGVsdGF9IFxtYXRoYmZ7Vn1eVCAsClxdCndpdGgKCi0gJFxkZWx0YV97bisxfT1cZGVsdGFfe24rMn09IFxjZG90cyA9IFxkZWx0YV9wPTAkCgotICRcYm9sZHN5bWJvbHtcRGVsdGF9JCBhICRwXHRpbWVzIHAkIGRpYWdvbmFsIG1hdHJpeCBvZiB0aGUgJFxkZWx0YV8xLFxsZG90cywgXGRlbHRhX3AkCgotICAkXG1hdGhiZntVfSQgYW4gJG5cdGltZXMgcCQgbWF0cml4IGFuZCAkXG1hdGhiZntWfSQgYSAkcCBcdGltZXMgcCQgbWF0cml4LiBOb3RlIHRoYXQgb25seSB0aGUgZmlyc3QgJG4kIGNvbHVtbnMgb2YgJFxtYXRoYmZ7VX0kIGFuZCAkXG1hdGhiZntWfSQgYXJlIGluZm9ybWF0aXZlLgoKV2l0aCB0aGUgU1ZEIG9mICRcbWF0aGJme1h9JCB3ZSB3cml0ZQogXFsKICAgXG1hdGhiZntYfV5UXG1hdGhiZntYfSA9IFxtYXRoYmZ7Vn1cYm9sZHN5bWJvbHtcRGVsdGEKICAgICB9XjJcbWF0aGJme1Z9XlQuCiBcXQogVGhlIGludmVyc2Ugb2YgJFxtYXRoYmZ7WH1eVFxtYXRoYmZ7WH0kIGlzIHRoZW4gZ2l2ZW4gYnkKIFxbCiAgIChcbWF0aGJme1h9XlRcbWF0aGJme1h9KV57LTF9ID0gXG1hdGhiZntWfVxib2xkc3ltYm9se1xEZWx0YX1eey0yfVxtYXRoYmZ7Vn1eVC4KIFxdCiBTaW5jZSAkXGJvbGRzeW1ib2x7XERlbHRhfSQgaGFzICRcZGVsdGFfe24rMX09XGRlbHRhX3tuKzJ9PSBcY2RvdHMgPSBcZGVsdGFfcD0wJCwgaXQgaXMgbm90IGludmVydGlibGUuCgoKTm90ZSB0aGF0IGl0IGNhbiBiZSBzaG93biB0aGF0ClxbCiAgXG1hdGhiZntYXlRYfStcbGFtYmRhIFxtYXRoYmZ7SX0gPSBcbWF0aGJme1Z9IChcYm9sZHN5bWJvbHtcRGVsdGF9XjIrXGxhbWJkYSBcbWF0aGJme0l9KSBcbWF0aGJme1Z9XlQgLApcXQppLmUuIGFkZGluZyBhIGNvbnN0YW50IHRvIHRoZSBkaWFnb25hbCBlbGVtZW50cyBkb2VzIG5vdCBhZmZlY3QgdGhlIGVpZ2VudmVjdG9ycywgYW5kIGFsbCBlaWdlbnZhbHVlcyBhcmUgaW5jcmVhc2VkIGJ5IHRoaXMgY29uc3RhbnQuICAgCiRcbG9uZ3JpZ2h0YXJyb3ckIHplcm8gZWlnZW52YWx1ZXMgYmVjb21lICRcbGFtYmRhJC4KCkhlbmNlLApcWwogIChcbWF0aGJme1heVFh9K1xsYW1iZGEgXG1hdGhiZntJfSleey0xfSA9IFxtYXRoYmZ7Vn0gKFxib2xkc3ltYm9se1xEZWx0YX1eMitcbGFtYmRhIFxtYXRoYmZ7SX0pXnstMX0gXG1hdGhiZntWfV5UICwKXF0Kd2hpY2ggY2FuIGJlIGNvbXB1dGVkIGV2ZW4gd2hlbiBzb21lIGVpZ2VudmFsdWVzIGluICRcYm9sZHN5bWJvbHtcRGVsdGF9XjIkIGFyZSB6ZXJvLgoKTm90ZSwgdGhhdCBmb3IgaGlnaCBkaW1lbnNpb25hbCBkYXRhICgkcD4+Pk4kKSBtYW55IGVpZ2VudmFsdWVzIGFyZSB6ZXJvIGJlY2F1c2UgJFxtYXRoYmZ7WF5UWH0kIGlzIGEgJHAgXHRpbWVzIHAkIG1hdHJpeCBhbmQgaGFzIHJhbmsgJE4kLgoKIyMgUHJvcGVydGllcyByaWRnZQoKLSBUaGUgUmlkZ2UgZXN0aW1hdG9yIGlzIGJpYXNlZCEgVGhlICRcYm9sZHN5bWJvbHtcYmV0YX0kIGFyZSBzaHJ1bmtlbiB0byB6ZXJvIQpcYmVnaW57ZXFuYXJyYXl9CiBcdGV4dHtFfVtcaGF0e1xib2xkc3ltYm9se1xiZXRhfX1dICY9JiAoXG1hdGhiZntYXlRYfStcbGFtYmRhIFxtYXRoYmZ7SX0pXnstMX0gXG1hdGhiZntYfV5UIFx0ZXh0e0V9W1xtYXRoYmZ7WX1dXFxcXAomPSYgKFxtYXRoYmZ7WH1eVFxtYXRoYmZ7WH0rXGxhbWJkYSBcbWF0aGJme0l9KV57LTF9IFxtYXRoYmZ7WH1eVCBcbWF0aGJme1h9XGJvbGRzeW1ib2x7XGJldGF9XFwKXGVuZHtlcW5hcnJheX0KCi0gTm90ZSwgdGhhdCB0aGUgc2hyaW5rYWdlIGlzIGxhcmdlciBpbiB0aGUgZGlyZWN0aW9uIG9mIHRoZSBzbWFsbGVyIGVpZ2VudmFsdWVzLgoKXGJlZ2lue2VxbmFycmF5fQpcdGV4dHtFfVtcaGF0e1xib2xkc3ltYm9se1xiZXRhfX1dJj0mXG1hdGhiZntWfSAoXGJvbGRzeW1ib2x7XERlbHRhfV4yK1xsYW1iZGEgXG1hdGhiZntJfSleey0xfSBcbWF0aGJme1Z9XlQgXG1hdGhiZntWfSBcYm9sZHN5bWJvbHtcRGVsdGF9XjIgXG1hdGhiZntWfV5UXGJvbGRzeW1ib2x7XGJldGF9XFxcXAomPSZcbWF0aGJme1Z9IChcYm9sZHN5bWJvbHtcRGVsdGF9XjIrXGxhbWJkYSBcbWF0aGJme0l9KV57LTF9IFxib2xkc3ltYm9se1xEZWx0YX1eMiBcbWF0aGJme1Z9XlRcYm9sZHN5bWJvbHtcYmV0YX1cXFxcCiY9JiBcbWF0aGJme1Z9ClxsZWZ0W1xiZWdpbnthcnJheX17Y2NjfQpcZnJhY3tcZGVsdGFfMV4yfXtcZGVsdGFfMV4yK1xsYW1iZGF9JlxsZG90cyYwIFxcCiZcdmRvdHMmXFwKMCZcbGRvdHMmXGZyYWN7XGRlbHRhX3JeMn17XGRlbHRhX3JeMitcbGFtYmRhfQpcZW5ke2FycmF5fVxyaWdodF0KXG1hdGhiZntWfV5UXGJvbGRzeW1ib2x7XGJldGF9ClxlbmR7ZXFuYXJyYXl9CgotIFJpZGdlIHJlZ3Jlc3Npb24gY2FuIGxlYWQgdG8gcGFyYW1ldGVycyB0aGF0IHN3aXRjaCBzaWduIGlmIHBlbmFsaXR5IGluY3JlYXNlcwoKCiMjIFRveGljb2dlbm9taWNzIGV4YW1wbGUKCi0gTiA9IDMwIGNoZW1pY2FsIGNvbXBvdW5kcyBoYXZlIGJlZW4gc2NyZWVuZWQgZm9yIHRveGljaXR5CgotIEJpb2Fzc2F5IGRhdGEgb24gdG94aWNpdHkgc2NyZWVuaW5nCgotIEdlbmUgZXhwcmVzc2lvbnMgaW4gYSBsaXZlciBjZWxsIGxpbmUgYXJlIHByb2ZpbGVkIGZvciBlYWNoIGNvbXBvdW5kIChNID0gNDAwMCBnZW5lcykKCi0gUHJlZGljdCBCaW9hc3NheSBzY29yZSBpbiBmdW5jdGlvbiBvZiBnZW5lIGV4cHJlc3Npb24uCgpgYGB7cn0KdG94RGF0YSA8LSByZWFkX2NzdigKICAiaHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3N0YXRPbWljcy9IREEyMDIwL2RhdGEvdG94RGF0YUNlbnRlcmVkLmNzdiIsCiAgY29sX3R5cGVzID0gY29scygpCikKZGltKHRveERhdGEpCgpsbUZpdCA8LSBsbSAoQkEgfi4gLCB0b3hEYXRhKQpsbUZpdCAlPiUgIAogIGNvZWYgJT4lIAogIGhlYWQoNDApCgpsbUZpdCAlPiUgCiAgY29lZiAlPiUgCiAgaXMubmEgJT4lIAogIHN1bQoKbG1GaXQgJT4lIAogIGNvZWYgJT4lIAogIGlzLm5hICU+JSAKICBgIWAgJT4lIAogIHN1bSAKYGBgCgpgYGB7cn0KbGlicmFyeShnbG1uZXQpCm1SaWRnZSA8LSBnbG1uZXQoCiAgeCA9IHRveERhdGFbLC0xXSAlPiUKICAgIGFzLm1hdHJpeCwKICB5ID0gdG94RGF0YSAlPiUKICAgIHB1bGwoQkEpLAogIGFscGhhID0gMCkgIyByaWRnZTogYWxwaGEgPSAwCgpwbG90KG1SaWRnZSwgeHZhcj0ibGFtYmRhIikKYGBgCgojIyBObyBwZW5hbGlzYXRpb24gb2Ygc29tZSBwYXJhbWV0ZXJzIAoKIE5vdGUsIHRoYXQgd2UgdHlwaWNhbGx5IGRvIG5vdCBwZW5hbGlzZSB0aGUgaW50ZXJjZXB0LiBXZSBjYW4gZG8gdGhpcyBieSBpbnRyb2R1Y2luZyBtYXRyaXggCiAKICQkCiBcbWF0aGJme0R9ID0gXGxlZnRbXGJlZ2lue2FycmF5fXtjY2N9MCYgMCBcXCAwJlxtYXRoYmZ7SX1cZW5ke2FycmF5fVxyaWdodF0KICQkCiBBbmQgbGV0IAogJCQKIFxtYXRoYmZ7Q30gPSBcbGVmdFsgXGJlZ2lue2FycmF5fXtjY30gMSAmIFxtYXRoYmZ7MX1cXFxtYXRoYmZ7MX0mXG1hdGhiZntYfV97MVxsZG90cyBwfVxlbmR7YXJyYXl9XHJpZ2h0XSBcdGV4dHsgYW5kIH0gXGJvbGRzeW1ib2x7XHRoZXRhfSA9XGxlZnRbXGJlZ2lue2FycmF5fXtjfVxiZXRhXzBcXAogXGJvbGRzeW1ib2x7XGJldGF9X3sxXGxkb3RzIHB9XGVuZHthcnJheX1ccmlnaHRdCiAkJCAKIAp3aXRoICRcbWF0aGJme1h9X3sxXGxkb3RzIHB9JCB0aGUgbWF0cml4IG9mIHRoZSBwcmVkaWN0b3JzIGZvciB3aGljaCB0aGUgc2xvcGUgdGVybXMgJFxib2xkc3ltYm9sIHtcYmV0YX1fezFcbGRvdHMgcH0kIGFyZSBlc3RpbWF0ZWQuIAogCiBUaGUgbG9zcyBmdW5jdGlvbiB0aGVuIGJlY29tZXMKIAogJCQKIExfXHRleHR7cmlkZ2V9KFxtYXRoYmZ7WX0sXGJvbGRzeW1ib2x7XGJldGF9LFxsYW1iZGEpID0gKFxtYXRoYmZ7WX0tXG1hdGhiZntDXHRoZXRhfSleVChcbWF0aGJme1l9LVxtYXRoYmZ7Q1x0aGV0YX0pICsgXGxhbWJkYSBcYm9sZHN5bWJvbHtcYmV0YX1eVFxtYXRoYmZ7RH1cYm9sZHN5bWJvbHtcdGhldGF9LgogJCQKIAphbmQgdGhlIHJpZGdlIGVzdGltYXRvciB0aGVuIGJlY29tZXMKIAogJCQKXGhhdHtcYm9sZHN5bWJvbHtcYmV0YX19ID0gKFxtYXRoYmZ7Q15UQ30rXGxhbWJkYSBcbWF0aGJme0R9KV57LTF9IFxtYXRoYmZ7Q15UIFl9CiQkCgoKIyMgTGluayBMTU0KCkFkZCBHYXVzc2lhbiBwcmlvciBvbiB0aGUgbW9kZWwgcGFyYW1ldGVycy9zcGVjaWZ5IHRoZSBmaXhlZCBlZmZlY3RzIGFzIHJhbmRvbSBlZmZlY3RzIAoKJCQKXGJlZ2lue2FycmF5fXtjY2x9ClxtYXRoYmZ7WX0gJj0mIFxtYXRoYmZ7MX1cYmV0YV8wICsgXG1hdGhiZntYfV97MVxsZG90cyBwfSBcYm9sZHN5bWJvbHtcYmV0YX1fezFcbGRvdHMgcH0gKyBcYm9sZHN5bWJvbHtcZXBzaWxvbn1cXApcYm9sZHN5bWJvbHtcYmV0YX1fezFcbGRvdHMgcH0gJlxzaW0mIFx0ZXh0e01WTn0oMCxcbWF0aGJme0l9XHNpZ21hXjJfXGJldGEpIFxcClxib2xkc3ltYm9se1xlcHNpbG9ufSAmXHNpbSYgXHRleHR7TVZOfSgwLFxtYXRoYmZ7SX1cc2lnbWFeMl9cZXBzaWxvbikgXFwKXGVuZHthcnJheX0KJCQgCgpOb3RlIHRoYXQgd2Uga25vdyBmcm9tIExNTSB0aGVvcnkgdGhhdCB0aGUgQkxVUCBpcwoKJCQKIFxoYXR7XGJvbGRzeW1ib2x7XHRoZXRhfX0gPSAgKFxtYXRoYmZ7Q31eVFxtYXRoYmZ7Q30gKyBcc2lnbWFeMl9cZXBzaWxvbiBIKV57LTF9XG1hdGhiZntDfV5UXG1hdGhiZntZfQokJAp3aXRoCgokJAogXG1hdGhiZntIfT1cbGVmdFtcYmVnaW57YXJyYXl9e2NjfQpcbWF0aGJmezB9JlxtYXRoYmZ7MH1cXApcbWF0aGJmezB9JlxtYXRoYmZ7R31eey0xfQpcZW5ke2FycmF5fVxyaWdodF0gPSBcbGVmdFtcYmVnaW57YXJyYXl9e2NjfQpcbWF0aGJmezB9JlxtYXRoYmZ7MH1cXApcbWF0aGJmezB9JlxzaWdtYV57LTJ9X3tcYmV0YX1cbWF0aGJme0l9ClxlbmR7YXJyYXl9XHJpZ2h0XSA9IFxzaWdtYV57LTJ9X1xiZXRhIFxtYXRoYmZ7RH0KJCQKClNvIHRoZSBCTFVQIHJlZHVjZXMgdG8gCgokJAogXGhhdHtcYm9sZHN5bWJvbHtcdGhldGF9fSA9ICAoXG1hdGhiZntDfV5UXG1hdGhiZntDfSArIFxmcmFje1xzaWdtYV4yX1xlcHNpbG9ufXtcc2lnbWFeMl9cYmV0YX0gXG1hdGhiZntEfSleey0xfVxtYXRoYmZ7Q31eVFxtYXRoYmZ7WX0KJCQKCndoaWNoIGlzIGVxdWl2YWxlbnQgdG8gdGhlIHJpZGdlIHNvbHV0aW9uISAKCi0gJFxmcmFje1xzaWdtYV4yX1xlcHNpbG9ufXtcc2lnbWFeMl9cYmV0YX0kIHBsYXlzIHRoZSByb2xlIG9mICByaWRnZSBwZW5hbHR5ICRcbGFtYmRhJCBpbiByaWRnZSByZWdyZXNzaW9uLiAKCi0gd2UgY2FuIGV4cGxvaXQgdGhlIG1peGVkIG1vZGVsIG1hY2hpbmVyeSB0byBwZXJmb3JtIHJpZGdlIHJlZ3Jlc3Npb24gYW5kIHRvIGVzdGltYXRlIHRoZSBwZW5hbHR5IHBhcmFtZXRlciB1c2luZyB2YXJpYW5jZSBjb21wb25lbnRzLiAKCgokXHJpZ2h0YXJyb3ckIFJlZ2VuaWUgaXMgZXhwbG9pdGluZyB0aGlzIGxpbmsgdG8gYXZvaWQgY29tcHV0YXRpb25hbCBjb21wbGV4aXR5IG9mIGZpdHRpbmcgTE1Ncy4gICAgCiRccmlnaHRhcnJvdyQgUmV2aXNpdCB0byBbc3VwcGxlbWVudF0oaHR0cHM6Ly9zdGF0aWMtY29udGVudC5zcHJpbmdlci5jb20vZXNtL2FydCUzQTEwLjEwMzglMkZzNDE1ODgtMDIxLTAwODcwLTcvTWVkaWFPYmplY3RzLzQxNTg4XzIwMjFfODcwX01PRVNNMV9FU00ucGRmKQoKCiMgUmVtYXJrcyAKCi0gVXNlIG9mIFIgZGlmZmVyZW50IHBlbmFsdGllcyAkXGxhbWJkYV8xIFxsZG90cyBcbGFtYmRhX1IkIGFzIGEgcHJveHkgdG8gYWxsb3cgZm9yIGRpZmZlcmVudCByYW5kb20gZWZmZWN0IHZhcmlhbmNlcwotIENvbnN0cnVjdCBSIHByZWRpY3Rpb25zIGZvciBwaGVub3R5cGUgd2l0aCBkaWZmZXJlbnQgcGVuYWx0aWVzIHBlciBibG9jayAKLSBDb21iaW5lIHRoZSBwcmVkaWN0b3JzIGluIGEgc3RhY2tlZCBwcmVkaWN0b3IgCi0gSSBmZWVsIHRoYXQgdGhpcyBhbHNvIGFsbG93cyBkZXZpYXRpb25zIG9mIHRoZSBpbmZpbml0ZXNpbWFsIG1vZGVsCi0gRGFuZ2VyIHRoYXQgaXQgaXMgbm90IHdlbGwgY2FsaWJyYXRlZDogaW5kZWVkIG5vbWluYXRvcgoKJCQKXGhhdFxzaWdtYV4yX1xlcHNpbG9uXHRpbGRle1xtYXRoYmZ7eH19XlRcdGlsZGV7XG1hdGhiZnt4fX0gXGxlZnRyaWdodGFycm93IFx0aWxkZXtcbWF0aGJme3h9fV5UXGhhdHtcbWF0aGJme1Z9fV57LTF9X3tcdGV4dHtMT0NPfSxIXzB9XHRpbGRle1xtYXRoYmZ7eH19CiQk</div>
+<div class="footer">
+    <hr>
+    This work is licensed under the <a href= "https://creativecommons.org/licenses/by-nc-sa/4.0">
+    CC BY-NC-SA 4.0</a> licence.
+</div>
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeSourceEmbed("regenie.Rmd");
+  window.initializeCodeFolding("show" === "show");
+});
+</script>
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
