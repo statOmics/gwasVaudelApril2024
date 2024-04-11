@@ -14,9 +14,6 @@ output:
       code_folding: show
 ---
 
-- [REGENIE Paper](https://www.nature.com/articles/s41588-021-00870-7.pdf)
-- [Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fs41588-021-00870-7/MediaObjects/41588_2021_870_MOESM1_ESM.pdf)
-
 # Key idea
 
 - Another fast approach to fit the GWAS-LMM. 
@@ -28,7 +25,7 @@ output:
 4. Model LOCO residuals using candidate SNP. 
 
 $$
-\mathbf{y}_\text{residual-LOCO, H_0} = \tilde{\mathbf{x}}^T_\text{test} \boldsymbol{\beta}_\text{test} + \epsilon
+\mathbf{y}_\text{residual-LOCO, H_0} = \tilde{\mathbf{x}}_\text{test} \boldsymbol{\beta}_\text{test} + \epsilon
 $$
 
 5. Use a score test similar to BOLT-LMM-inf 
@@ -341,3 +338,49 @@ $\rightarrow$ Revisit to [supplement](https://static-content.springer.com/esm/ar
 $$
 \hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}} \leftrightarrow \tilde{\mathbf{x}}^T\hat{\mathbf{V}}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}
 $$
+
+# How to hack REGENIE for our own purposes
+
+1. Recast $\mathbf{Z}_\text{GRM}$ to accommodate for your specific covariance structure: e.g. blowing up the $\mathbf{Z}_\text{GRM}$ by stacking inherited trait mother, father and non-inherited traits mother and father
+
+$$
+\mathbf{Z}_\text{GRM} = [\mathbf{Z}_\text{GRM}^\text{mt}\quad \mathbf{Z}_\text{GRM}^\text{pt}\quad \mathbf{Z}_\text{GRM}^\text{mnt}\quad \mathbf{Z}_\text{GRM}^\text{pnt}]
+$$
+or 
+
+$$
+\mathbf{Z}_\text{GRM} = [\mathbf{Z}_\text{GRM}^\text{mt}\quad \mathbf{Z}_\text{sibling}^\text{pt}\quad \mathbf{Z}_\text{family}^\text{mnt}]
+$$
+The different ridge parameters and the stacked ridge estimator should enable for something that is equivalent to distinct "random effect variances"... 
+
+2. Use step 1 REGENIE to project out the other fixed effects and to obtain the LOCO residuals 
+
+3. Use traditional linear models to calculate the tests "in REGENIE style" for our own applications: e.g. use loco residuals to estimate model of interest, e.g. 
+
+$$
+\begin{array}{rcl}
+\mathbf{y}_\text{residual-LOCO, H_0} &=& \tilde{\mathbf{x}}_\text{test,mt} {\beta}_\text{test,mt} + \tilde{\mathbf{x}}_\text{test,mt} {\beta}_\text{test,mt}+\tilde{\mathbf{x}}_\text{test,pt} {\beta}_\text{test,mt}+\tilde{\mathbf{x}}_\text{test,mnt}+
+{\beta}_\text{test,pnt}\epsilon\\\\
+\mathbf{y}_\text{residual-LOCO, H_0} &=& \mathbf{X}_\text{test} \boldsymbol{\beta}_\text{test} +\boldsymbol{\epsilon}
+\end{array}
+$$
+- Omnibus test $H_0: \beta_\text{test,mt} = \beta_\text{test,pt}=\beta_\text{test,mnt}=\beta_\text{test,mnt}=0$
+
+$$
+t_\text{omnibus} = \hat{\boldsymbol{\beta}}_\text{test} \hat{\boldsymbol{\Sigma}}_{\hat{\boldsymbol{\beta}}_\text{test}}^{-1}\hat{\boldsymbol{\beta}}_\text{test}
+$$
+follows a $\chi^2_4$ distribution with 4 degrees of freedom under $H_0$
+
+posthoc tests: 
+
+$$
+t_\text{omnibus} =\frac{\beta_\text{test, k}^2}{\mathbf{x}_j^T\mathbf{x}_j\sigma^2_\epsilon} 
+$$
+
+## Important
+
+- Do not forget to project the predictors out of the SNP vectors used in your user defined stage2 tests! 
+- Check calibration p-values! 
+- Readjust calibration yourself if needed for your application.
+
+
