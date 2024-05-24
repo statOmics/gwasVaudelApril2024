@@ -127,7 +127,7 @@ The loss function to be minimised is
  
  Solving $L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)=0$ gives
  
- $$
+ \[
  \begin{array}{rcl}
    \frac{\partial}{\partial \boldsymbol{\beta}}L_\text{ridge}(\mathbf{Y},\boldsymbol{\beta},\lambda)  
    &=& 0 \\\\
@@ -135,7 +135,7 @@ The loss function to be minimised is
 \hat{\boldsymbol{\beta}} &=& (\mathbf{X^TX}+\lambda \mathbf{I})^{-1} \mathbf{X^T Y}
 
    \end{array}
-$$
+\]
 
 It can be shown that $(\mathbf{X^TX}+\lambda \mathbf{I})$ is always of rank $p$ if $\lambda>0$.
 
@@ -338,3 +338,4 @@ $\rightarrow$ Revisit to [supplement](https://static-content.springer.com/esm/ar
 $$
 \hat\sigma^2_\epsilon\tilde{\mathbf{x}}^T\tilde{\mathbf{x}} \leftrightarrow \tilde{\mathbf{x}}^T\hat{\mathbf{V}}^{-1}_{\text{LOCO},H_0}\tilde{\mathbf{x}}
 $$
+

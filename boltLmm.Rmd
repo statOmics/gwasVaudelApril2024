@@ -19,7 +19,7 @@ library(tidyverse)
 library(plotly)
 ```
 
-- [BOLT-LMM paper](https://www.nature.com/articles/ng.3190.pdf)
+- [BOLT-LMM paper](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4342297/pdf/nihms650284.pdf)
 - [Supplementary Information](https://static-content.springer.com/esm/art%3A10.1038%2Fng.3190/MediaObjects/41588_2015_BFng3190_MOESM5_ESM.pdf)
 
 
@@ -41,7 +41,7 @@ with
 - $\boldsymbol{\beta}_c$ the $p\times 1$ vector of parameters modeling the association of the p covariates and the phenotype. 
 - $\mathbf{Z}$ an $N\times M$ genetic relationship matrix (GRM) with all normalised genotypes
 - $\mathbf{u}$ an $M\times 1$ vector with i.i.d. random effect for each SNP $\mathbf{u}\sim \text{MVN}(0,\mathbf{I}\sigma_u^2)$
-- $\boldsymbol{\epsilon}$ an $M\times 1$ vector with environmental residuals that are assumed to be independent of $\mathbf{u}$ and i.i.d.  $\boldsymbol{\epsilon}\sim \text{MVN}(0,\mathbf{I}\sigma_\epsilon^2)$
+- $\boldsymbol{\epsilon}$ an $N\times 1$ vector with environmental residuals that are assumed to be independent of $\mathbf{u}$ and i.i.d.  $\boldsymbol{\epsilon}\sim \text{MVN}(0,\mathbf{I}\sigma_\epsilon^2)$
 
 Random effects are used to model the correlation structure in the data. They imply a certain covariance structure of $\mathbf{y}$
 
@@ -82,19 +82,20 @@ $$
 
 1. Prevention of false positive associations due to population or relatedness structure 
 2. An increase in power obtained through the application of a correction that is specific to this structure. 
-3. LMM can also increase power in studies without sample structure by implicitly conditioning on associated loci other than the candidate locus. 
+3. LMM can also increase power by implicitly conditioning on associated loci other than the candidate locus. 
 
 ## Pitfalls of LMM
 
 1. Computational complexity: 
-- Building the GRM ($M \times M$ matrix with $M > 500.000$ )
-- Estimating the mean and variance components ($N > 70000$) for each candidate SNP! 
-- Association statistics for each variant (for each SNP!)
+
+  - $M > 500.000$, $N > 70000$
+  - Building the GRM ($M \times M$ matrix)
+  - Estimating the mean and variance components  for each of the $M$ candidate SNP! 
+  - Association statistics for each variant (for each SNP!)
 
 2. Loss in power when the candidate marker is included in the GRM
 
-3. using a small subset of markers in the GRM can compromise correction for stratification
-
+3. Using a small subset of markers in the GRM can compromise correction for stratification
 
 # Bolt LMM 
 
@@ -1088,7 +1089,7 @@ Note, that
 - $\hat{\boldsymbol{\beta}}$ and  $\boldsymbol{\Sigma}_\hat{\boldsymbol{\beta}}$ involve the computationally challenging calculation of 
   
   - $\hat{\mathbf{V}}^{-1}$ an $N \times N$  with $N > 70.000$ subjects
-  - $\mathbf{Z}_{GRM}^T\mathbf{Z}$ $M \times M$ with $M > 500.000$ high quality SNPs
+  - $\mathbf{Z}_{GRM}^T\mathbf{Z}$ an $M \times M$ with $M > 500.000$ high quality SNPs
     
 ### Adopting result to BOLT-LMM
 
