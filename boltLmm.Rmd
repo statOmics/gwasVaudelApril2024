@@ -80,9 +80,11 @@ $$
 
 ## Main advantages of LMM method
 
-1. Prevention of false positive associations due to population or relatedness structure 
-2. An increase in power obtained through the application of a correction that is specific to this structure. 
-3. LMM can also increase power by implicitly conditioning on associated loci other than the candidate locus. 
+1. Better control of false positive associations by correcting for population or relatedness structure 
+2. An increase in power: 
+- Through the correction for this structure. 
+- by conditioning on associated loci other than the candidate locus. 
+
 
 ## Pitfalls of LMM
 
@@ -967,7 +969,7 @@ $$
 $$
 
 - $\mathbf{P}_x$ projects vectors to an (N − C)-dimensional subspace orthogonal on the known covariates. 
-- keep in mind that all these $N$ vectors all belong to the (N − C)-dimensional subspace!   
+- Keep in mind that these $N$ vectors all belong to the (N − C)-dimensional subspace!   
 $\rightarrow$ Important when estimating $\tilde{\mathbf{y}}$ and  $\tilde{\mathbf{Z}}$ 
 
 ## Bolt-LMM uses a score test to test for the candidate SNP

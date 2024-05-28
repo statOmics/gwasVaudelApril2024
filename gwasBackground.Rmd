@@ -14,9 +14,41 @@ output:
       code_folding: show
 ---
 
-# Data 
+# Background
+
+## DNA and SNPs
+
+![](DNA_Nucleotides.jpeg)
+![](gene.svg)
+- Variation in DNA
+
+- 90% of variation in DNA are SNP: single nucleotide polymorphism. Different base at a single position in the DNA
+
+- Humans: $\pm$ 5 million SNPs
+
+- Most of them are neutral: high redundancy in the genomic code
+
+- Sometimes they are not neutral:
+
+![](Sickle_Cell_Anemia_wiki3.png){width=25%}![](sickleCellWikipedia2.png){width=75%}
+
+
+
+
+- Genomic recombination of parental chromosomes when producing germ cells. 
+
+![](recombination.jpeg)
+
+- Linkage disequilibrium: SNPs often occur together because of genomic recombination!
+
+## GWAS in Bergen 
+
+- GWAS: Genome Wide Association Studies
+- Studies in large cohorts
+- Use SNPs to identify genes associated with a particular trait: e.g. birth weight, pacenta weight, BMI, ... .
 
 ![](gwasContextVaudel2.png)
+
 
 # Linear models for GWAS
 
@@ -111,9 +143,10 @@ $$
 
 ## Main advantages of LMM method
 
-1. Prevention of false positive associations due to population or relatedness structure 
-2. An increase in power obtained through the application of a correction that is specific to this structure. 
-3. LMM can also increase power by implicitly conditioning on associated loci other than the candidate locus. 
+1. Better control of false positive associations by correcting for population or relatedness structure 
+2. An increase in power: 
+- Through the correction for this structure. 
+- by conditioning on associated loci other than the candidate locus. 
 
 ## Pitfalls of LMM
 
