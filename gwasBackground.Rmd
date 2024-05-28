@@ -18,6 +18,8 @@ output:
 
 ## DNA and SNPs
 
+- 6 Billion base pairs: 3 billion from father and 3 billion from mother. 
+
 ![](DNA_Nucleotides.jpeg)
 ![](gene.svg)
 - Variation in DNA
