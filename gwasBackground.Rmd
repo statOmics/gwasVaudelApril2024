@@ -54,6 +54,23 @@ output:
 
 # Linear models for GWAS
 
+A conventional GWAS approach is to correct for population stratification using the following linear model. 
+
+$$
+\tag{1}
+\mathbf{y} = \mathbf{x}_\text{test}\beta_\text{test} + \mathbf{X}_c\boldsymbol{\beta}_c + \mathbf{X}_\text{PCA} \boldsymbol{\beta}_\text{PCA} +\boldsymbol{\epsilon} 
+$$
+with 
+
+- $\mathbf{y}$ an $N\times1$ vector of the phenotype
+- $\mathbf{x}_\text{test}$ an $N\times1$ vector with the genotype for the candidate SNP
+- $\beta_\text{test}$ the association of candidate SNP and the phenotype
+- $\mathbf{X}_c$ an $N\times C$ matrix with the covariate pattern for $C$ known covariates (vector of ones (intercept), age, gender, batch,...) 
+- $\boldsymbol{\beta}_c$ the $p\times 1$ vector of parameters modeling the association of the p covariates and the phenotype. 
+- $\mathbf{X}_\text{PCA}$ an $N\times p$ matrix with p PCs used to correct for population stratification
+- $\boldsymbol{\epsilon}$ an $N\times 1$ vector with environmental residuals that are assumed to be i.i.d.  $\epsilon_i \sim N(0,\sigma_u^2)$ with $i = 1\ldots N$
+
+
 Let $\mathbf{Z}$ be an $N\times M$ genetic relationship matrix with all $M$ normalised genotypes. 
 Then with the SVD we can decompose $\mathbf{Z}$
 
@@ -71,23 +88,6 @@ $$
 \mathbf{X}_\text{PCA} = \mathbf{U}_{p} \boldsymbol{\Delta}_p
 $$
 the scores on the first p PCs that can be used to correct for population stratification. 
-
-Hence, with a traditional approach we correct for population stratification using the following linear model. 
-
-$$
-\tag{1}
-\mathbf{y} = \mathbf{x}_\text{test}\beta_\text{test} + \mathbf{X}_c\boldsymbol{\beta}_c + \mathbf{X}_\text{PCA} \boldsymbol{\beta}_\text{PCA} +\boldsymbol{\epsilon} 
-$$
-with 
-
-- $\mathbf{y}$ an $N\times1$ vector of the phenotype
-- $\mathbf{x}_\text{test}$ an $N\times1$ vector with the genotype for the candidate SNP
-- $\beta_\text{test}$ the association of candidate SNP and the phenotype
-- $\mathbf{X}_c$ an $N\times C$ matrix with the covariate pattern for $C$ known covariates (vector of ones (intercept), age, gender, batch,...) 
-- $\boldsymbol{\beta}_c$ the $p\times 1$ vector of parameters modeling the association of the p covariates and the phenotype. 
-- $\mathbf{X}_\text{PCA}$ an $N\times p$ matrix with p PCs used to correct for population stratification
-- $\boldsymbol{\epsilon}$ an $N\times 1$ vector with environmental residuals that are assumed to be i.i.d.  $\epsilon_i \sim N(0,\sigma_u^2)$ with $i = 1\ldots N$
-
 
 # Linear mixed model for GWAS
 
