@@ -22,6 +22,8 @@ output:
 - Organised in $2 \times 23$ chromosomes of length 50 - 250 milion bp
 
 ![](cellChromosomeDnaBase.jpg)
+</br>
+
 ## Transcription / translation 
 
 ![](gene.svg)
