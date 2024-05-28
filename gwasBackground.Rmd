@@ -54,7 +54,7 @@ output:
 
 # Linear models for GWAS
 
-In GWAS on often corrects for population stratification using the following linear model. 
+In GWAS one often corrects for population stratification using the following linear model. 
 
 $$
 \tag{1}
