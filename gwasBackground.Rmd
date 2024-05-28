@@ -18,9 +18,10 @@ output:
 
 ## DNA and SNPs
 
-- 6 Billion base pairs: 3 billion from father and 3 billion from mother. 
+- 6 Billion base pairs: 3 billion from father and 3 billion from mother
+- Organised in $2 \times 23$ chromosomes of length 50 - 250 milion bp
 
-![](DNA_Nucleotides.jpeg)
+![](cellChromosomeDnaBase.jpg)
 ![](gene.svg)
 - Variation in DNA
 
