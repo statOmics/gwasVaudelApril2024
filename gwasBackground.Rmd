@@ -16,14 +16,18 @@ output:
 
 # Background
 
-## DNA and SNPs
+## DNA
 
 - 6 Billion base pairs: 3 billion from father and 3 billion from mother
 - Organised in $2 \times 23$ chromosomes of length 50 - 250 milion bp
 
 ![](cellChromosomeDnaBase.jpg)
+## Transcription / translation 
+
 ![](gene.svg)
-- Variation in DNA
+
+
+## Variation in DNA
 
 - 90% of variation in DNA are SNP: single nucleotide polymorphism. Different base at a single position in the DNA
 
@@ -44,7 +48,7 @@ output:
 
 - Linkage disequilibrium: SNPs often occur together because of genomic recombination!
 
-## GWAS in Bergen 
+## GWAS in University of Bergen 
 
 - GWAS: Genome Wide Association Studies
 - Studies in large cohorts
